@@ -167,7 +167,6 @@ namespace miniply {
     size_t m_currentElement = 0;
     bool m_elementLoaded    = false;
     std::vector<uint8_t> m_elementData;
-    std::vector<uint32_t> m_rowStarts; //!< Only used for elements where fixedSize = false.
   };
 
 } // namespace minipbrt
