@@ -1,6 +1,9 @@
 // Copyright 2019 Vilya Harvey
 #include "miniply.h"
 
+// Other PLY parsers to compare with miniply:
+#include <happly.h>
+
 #include <algorithm>
 #include <cassert>
 #include <chrono>
@@ -149,7 +152,7 @@ static bool ply_parse_face_element(miniply::PLYReader& reader, TriMesh* trimesh)
 }
 
 
-static TriMesh* parse_file(const char* filename)
+static TriMesh* parse_file_with_miniply(const char* filename)
 {
   miniply::PLYReader reader(filename);
   if (!reader.valid()) {
@@ -187,6 +190,101 @@ static TriMesh* parse_file(const char* filename)
 }
 
 
+static TriMesh* parse_file_with_happly(const char* filename)
+{
+  happly::PLYData plyIn(filename);
+  if (!plyIn.hasElement("vertex") || !plyIn.hasElement("face")) {
+    return nullptr;
+  }
+
+  TriMesh* trimesh = new TriMesh();
+
+  // Load vertex data.
+  {
+    happly::Element& elem = plyIn.getElement("vertex");
+    trimesh->numVerts = uint32_t(elem.count);
+
+    trimesh->pos = new float[trimesh->numVerts * 3];
+    std::vector<float> xvals = elem.getProperty<float>("x");
+    std::vector<float> yvals = elem.getProperty<float>("y");
+    std::vector<float> zvals = elem.getProperty<float>("z");
+    for (uint32_t i = 0; i < trimesh->numVerts; i++) {
+      trimesh->pos[3 * i    ] = xvals[i];
+      trimesh->pos[3 * i + 1] = yvals[i];
+      trimesh->pos[3 * i + 2] = zvals[i];
+    }
+
+    if (elem.hasProperty("nx") && elem.hasProperty("ny") && elem.hasProperty("nz")) {
+      trimesh->normal = new float[trimesh->numVerts * 3];
+      xvals = elem.getProperty<float>("nx");
+      yvals = elem.getProperty<float>("ny");
+      zvals = elem.getProperty<float>("nz");
+      for (uint32_t i = 0; i < trimesh->numVerts; i++) {
+        trimesh->normal[3 * i    ] = xvals[i];
+        trimesh->normal[3 * i + 1] = yvals[i];
+        trimesh->normal[3 * i + 2] = zvals[i];
+      }
+    }
+
+    bool hasUV = false;
+    if (elem.hasProperty("u") && elem.hasProperty("v")) {
+      xvals = elem.getProperty<float>("u");
+      yvals = elem.getProperty<float>("v");
+      hasUV = true;
+    }
+    else if (elem.hasProperty("s") && elem.hasProperty("t")) {
+      xvals = elem.getProperty<float>("s");
+      yvals = elem.getProperty<float>("t");
+      hasUV = true;
+    }
+    else if (elem.hasProperty("texture_u") && elem.hasProperty("texture_v")) {
+      xvals = elem.getProperty<float>("texture_u");
+      yvals = elem.getProperty<float>("texture_v");
+      hasUV = true;
+    }
+    else if (elem.hasProperty("texture_s") && elem.hasProperty("texture_t")) {
+      xvals = elem.getProperty<float>("texture_s");
+      yvals = elem.getProperty<float>("texture_t");
+      hasUV = true;
+    }
+    if (hasUV) {
+      trimesh->uv = new float[trimesh->numVerts * 2];
+      for (uint32_t i = 0; i < trimesh->numVerts; i++) {
+        trimesh->uv[2 * i    ] = xvals[i];
+        trimesh->uv[2 * i + 1] = yvals[i];
+      }
+    }
+  }
+
+  // Load index data.
+  {
+    std::vector<std::vector<int>> faces = plyIn.getFaceIndices<int>();
+
+    uint32_t numTriangles = 0;
+    for (const std::vector<int>& face : faces) {
+      if (face.size() < 3) {
+        continue;
+      }
+      numTriangles += uint32_t(face.size() - 2);
+    }
+
+    trimesh->numIndices = numTriangles * 3;
+    trimesh->indices = new int[trimesh->numIndices];
+
+    int* dst = trimesh->indices;
+    for (const std::vector<int>& face : faces) {
+      if (face.size() < 3) {
+        continue;
+      }
+      uint32_t faceTris = miniply::triangulate_polygon(uint32_t(face.size()), trimesh->pos, trimesh->numVerts, face.data(), dst);
+      dst += (faceTris * 3);
+    }
+  }
+
+  return trimesh;
+}
+
+
 static bool has_extension(const char* filename, const char* ext)
 {
   int j = int(strlen(ext));
@@ -200,12 +298,19 @@ static bool has_extension(const char* filename, const char* ext)
 
 int main(int argc, char** argv)
 {
+  bool useHapply = false;
+
   const int kFilenameBufferLen = 16 * 1024 - 1;
   char* filenameBuffer = new char[kFilenameBufferLen + 1];
   filenameBuffer[kFilenameBufferLen] = '\0';
 
   std::vector<std::string> filenames;
   for (int i = 1; i < argc; i++) {
+    if (strcmp(argv[i], "--happly") == 0) {
+      useHapply = true;
+      continue;
+    }
+
     if (has_extension(argv[i], "txt")) {
       FILE* f = fopen(argv[i], "r");
       if (f != nullptr) {
@@ -245,7 +350,7 @@ int main(int argc, char** argv)
   for (const std::string& filename : filenames) {
     Timer timer(true); // true ==> autostart the timer.
 
-    TriMesh* trimesh = parse_file(filename.c_str());
+    TriMesh* trimesh = useHapply ? parse_file_with_happly(filename.c_str()) : parse_file_with_miniply(filename.c_str());
     bool ok = trimesh != nullptr;
 
     timer.stop();
