@@ -74,11 +74,11 @@ struct TriMesh {
   float* normal  = nullptr; // if non-null, has 3 * numVerts elements.
   float* tangent = nullptr; // if non-null, has 3 * numVerts elements.
   float* uv      = nullptr; // if non-null, has 2 * numVerts elements.
-  int numVerts   = 0;
+  uint32_t numVerts   = 0;
 
   // Per-index data
   int* indices   = nullptr;
-  int numIndices = 0; // number of indices = 3 times the number of faces.
+  uint32_t numIndices = 0; // number of indices = 3 times the number of faces.
 
   ~TriMesh() {
     delete[] pos;
@@ -134,8 +134,7 @@ static bool ply_parse_vertex_element(miniply::PLYReader& reader, TriMesh* trimes
 static bool ply_parse_face_element(miniply::PLYReader& reader, TriMesh* trimesh)
 {
   // Find the indices property.
-  bool allTris = false;
-  int numIndices = reader.count_triangles("vertex_indices", &allTris) * 3;
+  uint32_t numIndices = reader.count_triangles("vertex_indices") * 3;
   if (numIndices == 0) {
     return false;
   }

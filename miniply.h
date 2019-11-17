@@ -105,7 +105,8 @@ namespace miniply {
     bool extract_vec2(const char* xname, const char* yname, float* dest) const;
     bool extract_vec3(const char* xname, const char* yname, const char* zname, float* dest) const;
 
-    uint32_t count_triangles(const char* propname, bool* onlyTris) const;
+    uint32_t count_triangles(const char* propName) const;
+    bool all_faces_are_triangles(const char* propName) const;
     bool extract_triangles(const char* propname, const float pos[], uint32_t numVerts, int indices[]) const;
 
   private:
@@ -168,5 +169,21 @@ namespace miniply {
     bool m_elementLoaded    = false;
     std::vector<uint8_t> m_elementData;
   };
+
+
+  /// Given a polygon with `n` vertices, where `n` > 3, triangulate it and
+  /// store the indices for the resulting triangles in `dst`. The `pos`
+  /// parameter is the array of all vertex positions for the mesh; `indices` is
+  /// the list of `n` indices for the polygon we're triangulating; and `dst` is
+  /// where we write the new indices to.
+  ///
+  /// The triangulation will always produce `n - 2` triangles, so `dst` must
+  /// have enough space for `3 * (n - 2)` indices.
+  ///
+  /// If `n == 3`, we simply copy the input indices to `dst`. If `n < 3`,
+  /// nothing gets written to dst.
+  ///
+  /// The return value is the number of triangles.
+  uint32_t triangulate_polygon(uint32_t n, const float pos[], uint32_t numVerts, const int indices[], int dst[]);
 
 } // namespace minipbrt

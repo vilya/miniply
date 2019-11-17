@@ -24,7 +24,6 @@ SOFTWARE.
 
 #include "miniply.h"
 
-#include <algorithm>
 #include <cassert>
 #include <cctype>
 #include <cmath>
@@ -36,7 +35,6 @@ SOFTWARE.
 #include <errno.h>
 #endif
 
-#define MINIPLY_STATIC_ARRAY_LENGTH(arr)  static_cast<uint32_t>(sizeof(arr) / sizeof((arr)[0]))
 
 namespace miniply {
 
@@ -79,9 +77,6 @@ namespace miniply {
   //
   // Constants
   //
-
-  static constexpr size_t kDefaultBufCapacity = 1024 * 1024 - 1;
-  static constexpr size_t kMaxReservedTempSpace = 4 * 1024 * 1024;
 
   static constexpr double kDoubleDigits[10] = { 0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0 };
 
@@ -164,81 +159,6 @@ namespace miniply {
   static inline bool is_safe_buffer_end(char ch)
   {
     return (ch > 0 && ch <= 32) || (ch >= 127);
-//    return is_whitespace(ch) || ch == '\n';
-  }
-
-
-  static char* copy_string(const char* src)
-  {
-    if (src == nullptr) {
-      return nullptr;
-    }
-    size_t len = std::strlen(src);
-    char* dst = new char[len + 1];
-    std::memcpy(dst, src, sizeof(char) * len);
-    dst[len] = '\0';
-    return dst;
-  }
-
-
-  static int find_string_in_array(const char* str, const char* arr[])
-  {
-    for (int i = 0; arr[i] != nullptr; i++) {
-      if (std::strcmp(str, arr[i]) == 0) {
-        return i;
-      }
-    }
-    return -1;
-  }
-
-
-  // If `filename` is a relative path, make it relative to the directory
-  // containing `current`. If `current` is an absolute path, the resolved
-  // filename will be absolute too. If `filename` is already an absolute path,
-  // then it's returned as is.
-  //
-  // The resolved path is stored in `buf`. The boolean return value indicates
-  // whether buf was large enough to hold it. If buf was large enough we return
-  // true, otherwise return false and set buf to the empty string.
-  static bool resolve_file(const char* filename, const char* current, char* buf, size_t bufSize)
-  {
-    if (filename == nullptr || filename[0] == '\0') {
-      return false;
-    }
-
-    bool isAbsolute = (filename[0] == '/' || filename[0] == '\\');
-    if (!isAbsolute) {
-      if (is_letter(filename[0]) && filename[1] == ':') {
-        isAbsolute = true;
-      }
-    }
-
-    size_t currentLen = 0;
-    if (!isAbsolute) {
-      for (size_t i = 0; current[i] != '\0'; i++) {
-        if (current[i] == '/' || current[i] == '\\') {
-          currentLen = i + 1;
-        }
-      }
-    }
-
-    size_t filenameLen = 0;
-    while (filename[filenameLen] != '\0') {
-      ++filenameLen;
-    }
-    ++filenameLen; // Include the null terminator.
-
-    size_t totalLen = currentLen + filenameLen;
-    if (totalLen > bufSize) {
-      return false;
-    }
-
-    if (currentLen > 0) {
-      memcpy(buf, current, sizeof(char) * currentLen);
-      buf += currentLen;
-    }
-    memcpy(buf, filename, sizeof(char) * filenameLen);
-    return true;
   }
 
 
@@ -251,6 +171,7 @@ namespace miniply {
     return (*f != nullptr) ? 0 : errno;
   #endif
   }
+
 
   static inline int64_t file_pos(FILE* file)
   {
@@ -432,42 +353,6 @@ namespace miniply {
   }
 
 
-  static bool match_chars(const char* expected, const char* start, char const** end)
-  {
-    const char* pos = start;
-    while (*pos == *expected && *expected != '\0') {
-      ++pos;
-      ++expected;
-    }
-    if (*expected != '\0') {
-      return false;
-    }
-    if (end != nullptr) {
-      *end = pos;
-    }
-    return true;
-  }
-
-
-  static bool match_keyword(const char* expected, const char* start, const char** end)
-  {
-    const char* tmp = nullptr;
-    if (!match_chars(expected, start, &tmp) || is_keyword_part(*tmp)) {
-      return false;
-    }
-    if (end != nullptr) {
-      *end = tmp;
-    }
-    return true;
-  }
-
-
-  static inline float degrees_to_radians(float degrees)
-  {
-    return degrees * kPi / 180.0f;
-  }
-
-
   static void endian_swap_2(uint8_t* data)
   {
     uint8_t tmp = data[0];
@@ -529,8 +414,6 @@ namespace miniply {
     m_bufEnd = m_buf + kPLYReadBufferSize;
     m_pos = m_bufEnd;
     m_end = m_bufEnd;
-
-//    fprintf(stderr, "PLY file %s\n", filename);
 
     if (file_open(&m_f, filename, "rb") != 0) {
       m_f = nullptr;
@@ -714,7 +597,7 @@ namespace miniply {
             return;
           }
 
-          numBytes += count * kPLYPropertySize[uint32_t(prop.type)];
+          numBytes += uint32_t(count) * kPLYPropertySize[uint32_t(prop.type)];
           if (m_pos + numBytes > m_bufEnd) {
             if (!refill_buffer() || m_pos + numBytes > m_bufEnd) {
               m_valid = false;
@@ -796,7 +679,7 @@ namespace miniply {
             return;
           }
 
-          numBytes += count * kPLYPropertySize[uint32_t(prop.type)];
+          numBytes += uint32_t(count) * kPLYPropertySize[uint32_t(prop.type)];
           if (m_pos + numBytes > m_bufEnd) {
             if (!refill_buffer() || m_pos + numBytes > m_bufEnd) {
               m_valid = false;
@@ -1018,11 +901,11 @@ namespace miniply {
   }
 
 
-  uint32_t PLYReader::count_triangles(const char* propname, bool* onlyTris) const
+  uint32_t PLYReader::count_triangles(const char* propName) const
   {
     // Find the indices property.
     const PLYElement* elem = element();
-    uint32_t indicesIdx = elem->find_property(propname);
+    uint32_t indicesIdx = elem->find_property(propName);
     if (indicesIdx == kInvalidIndex) {
       return 0; // missing indices property
     }
@@ -1034,32 +917,162 @@ namespace miniply {
 
     // Count the number of triangles in the mesh.
     uint32_t numTriangles = 0;
-    bool allTris = true; // whether all faces are already triangles.
     for (uint32_t i = 0; i < elem->count; i++) {
-      switch (faces.rowCount[i]) {
-      case 0:
-      case 1:
-      case 2:
-        allTris = false;
-        break;
-      case 3:
-        ++numTriangles;
-        break;
-      case 4:
-        numTriangles += 2;
-        allTris = false;
-        break;
-      default:
+      if (faces.rowCount[i] >= 3) {
         numTriangles += faces.rowCount[i] - 2;
-        allTris = false;
-        break;
       }
     }
 
-    if (onlyTris != nullptr) {
-      *onlyTris = allTris;
-    }
     return numTriangles;
+  }
+
+
+  bool PLYReader::all_faces_are_triangles(const char *propName) const
+  {
+    // Find the indices property.
+    const PLYElement* elem = element();
+    uint32_t indicesIdx = elem->find_property(propName);
+    if (indicesIdx == kInvalidIndex) {
+      return 0; // missing indices property
+    }
+
+    const PLYProperty& faces = elem->properties[indicesIdx];
+    if (faces.countType == PLYPropertyType::None) {
+      return 0; // invalid indices property, should be a list
+    }
+
+    // Count the number of triangles in the mesh.
+    for (uint32_t i = 0; i < elem->count; i++) {
+      if (faces.rowCount[i] != 3) {
+        return false;
+      }
+    }
+
+    return true;
+  }
+
+
+  // We assume that `indices` has already been allocated, with enough space to
+  // hold all triangles.
+  //
+  // If there are any invalid indices on a polygon (i.e. where idx < 0 or
+  // idx >= numVerts) then that face will be skipped.
+  bool PLYReader::extract_triangles(const char* propname, const float pos[], uint32_t numVerts, int indices[]) const
+  {
+    // Find the indices property.
+    const PLYElement* elem = element();
+    uint32_t indicesIdx = elem->find_property(propname);
+    if (indicesIdx == kInvalidIndex) {
+      return false; // missing indices property
+    }
+
+    const PLYProperty& faces = elem->properties[indicesIdx];
+    if (faces.countType == PLYPropertyType::None) {
+      return false; // invalid indices property, should be a list
+    }
+
+    // Count the number of triangles in the mesh.
+    uint32_t numTriangles = count_triangles(propname);
+    if (numTriangles == 0) {
+      return false; // can't have a mesh with 0 triangles!
+    }
+
+    // Allocate storage for the indices.
+    uint32_t numIndices = numTriangles * 3;
+
+    // Fill in the indices. From fastest to slowest:
+    // 1. If all faces are triangles and the indices have type Int or UInt, memcpy them all in one go.
+    // 2. If all faces are triangles and the indices are some other type, do 3 type conversions and assignments per face.
+    // 3. If there are some non-triangle faces and the indices are Int or UInt, memcpy contiguous runs of triangles & triang
+    if (all_faces_are_triangles(propname)) {
+      if (faces.type == PLYPropertyType::Int || faces.type == PLYPropertyType::UInt) {
+        // All faces are triangles and have a type compatible with trimesh indices.
+        std::memcpy(indices, faces.listData.data(), sizeof(uint32_t) * numIndices);
+      }
+      else {
+        // All faces are triangles but the indices require type conversion.
+        const uint8_t* src = faces.listData.data();
+        const size_t srcIndexBytes = kPLYPropertySize[uint32_t(faces.type)];
+        for (uint32_t i = 0; i < numIndices; i++) {
+          indices[i] = to_int(faces.type, src);
+          src += srcIndexBytes;
+        }
+      }
+    }
+    else {
+      if (faces.type == PLYPropertyType::Int || faces.type == PLYPropertyType::UInt) {
+        // Some faces are not triangles but the indices do not require type conversion.
+        // If we find a contiguous run of triangles, we can memcpy them all in one go.
+        // Faces with a different vertex count have to be handled as they occur.
+        int* dst = indices;
+        uint32_t triStart = 0;
+        bool wasTri = false;
+        for (uint32_t i = 0; i < elem->count; i++) {
+          uint32_t faceVerts = faces.rowCount[i];
+          if (faceVerts == 3) {
+            if (!wasTri) {
+              triStart = i;
+            }
+            wasTri = true;
+          }
+          else {
+            // If we've come to the end of a run of triangles, copy them all over.
+            if (wasTri) {
+              uint32_t numInts = (i - triStart) * 3;
+              std::memcpy(dst, faces.listData.data() + faces.rowStart[triStart], numInts * sizeof(int));
+              dst += numInts;
+            }
+            wasTri = false;
+
+            if (faceVerts >= 4) {
+              const int* src = reinterpret_cast<const int*>(faces.listData.data() + faces.rowStart[i]);
+              uint32_t numTrisAdded = triangulate_polygon(faceVerts, pos, numVerts, src, dst);
+              dst += numTrisAdded * 3;
+            }
+            else {
+              // Face is degenerate (less than 3 verts) so we ignore it.
+              continue;
+            }
+          }
+        }
+        // If there is a run of triangles at the end of the faces list,
+        // make sure they're copied too.
+        if (wasTri) {
+          uint32_t numInts = (elem->count - triStart) * 3;
+          std::memcpy(dst, faces.listData.data() + faces.rowStart[triStart], numInts * sizeof(int));
+        }
+      }
+      else {
+        // Some faces are not triangles and the indices require type conversion.
+        const size_t srcIndexBytes = kPLYPropertySize[uint32_t(faces.type)];
+        int* dst = indices;
+        std::vector<int> tmp;
+        tmp.reserve(32);
+        for (uint32_t i = 0; i < elem->count; i++) {
+          uint32_t faceVerts = faces.rowCount[i];
+          if (faceVerts < 3) {
+            continue;
+          }
+          const uint8_t* src = faces.listData.data() + faces.rowStart[i];
+          tmp.clear();
+          for (uint32_t v = 0; v < faceVerts; v++) {
+            tmp.push_back(to_int(faces.type, src));
+            src += srcIndexBytes;
+          }
+
+          if (faceVerts == 3) {
+            std::memcpy(dst, tmp.data(), sizeof(int) * 3);
+            dst += 3;
+          }
+          else {
+            uint32_t numTrisAdded = triangulate_polygon(faceVerts, pos, numVerts, tmp.data(), dst);
+            dst += numTrisAdded * 3;
+          }
+        }
+      }
+    }
+
+    return true;
   }
 
 
@@ -1587,7 +1600,7 @@ namespace miniply {
     m_pos += countBytes;
     m_end = m_pos;
 
-    const size_t numBytes = kPLYPropertySize[uint32_t(prop.type)] * count;
+    const size_t numBytes = kPLYPropertySize[uint32_t(prop.type)] * uint32_t(count);
     if (m_pos + numBytes > m_bufEnd) {
       if (!refill_buffer() || m_pos + numBytes > m_bufEnd) {
         m_valid = false;
@@ -1681,7 +1694,7 @@ namespace miniply {
     m_pos += countBytes;
     m_end = m_pos;
 
-    const size_t numBytes = kPLYPropertySize[uint32_t(prop.type)] * count;
+    const size_t numBytes = kPLYPropertySize[uint32_t(prop.type)] * uint32_t(count);
     if (m_pos + numBytes > m_bufEnd) {
       if (!refill_buffer() || m_pos + numBytes > m_bufEnd) {
         m_valid = false;
@@ -1791,7 +1804,7 @@ namespace miniply {
   }
 
 
-  static uint32_t triangulate_polygon(uint32_t n, const float pos[], const int indices[], int dst[])
+  uint32_t triangulate_polygon(uint32_t n, const float pos[], uint32_t numVerts, const int indices[], int dst[])
   {
     if (n < 3) {
       return 0;
@@ -1811,6 +1824,14 @@ namespace miniply {
       dst[4] = indices[3];
       dst[5] = indices[1];
       return 2;
+    }
+
+    // Check that all indices for this face are in the valid range before we
+    // try to dereference them.
+    for (uint32_t i = 0; i < n; i++) {
+      if (indices[i] < 0 || uint32_t(indices[i]) >= numVerts) {
+        return 0;
+      }
     }
 
     const Vec3* vpos = reinterpret_cast<const Vec3*>(pos);
@@ -1873,148 +1894,6 @@ namespace miniply {
     dst[2] = indices[prev[first]];
 
     return n - 2;
-  }
-
-
-  // We assume that `indices` has already been allocated, with enough space to
-  // hold all triangles.
-  bool PLYReader::extract_triangles(const char* propname, const float pos[], uint32_t numVerts, int indices[]) const
-  {
-    // Find the indices property.
-    const PLYElement* elem = element();
-    uint32_t indicesIdx = elem->find_property(propname);
-    if (indicesIdx == kInvalidIndex) {
-      return false; // missing indices property
-    }
-
-    const PLYProperty& faces = elem->properties[indicesIdx];
-    if (faces.countType == PLYPropertyType::None) {
-      return false; // invalid indices property, should be a list
-    }
-
-    // Count the number of triangles in the mesh.
-    uint32_t numTriangles = 0;
-    bool allTris = true; // whether all faces are already triangles.
-    for (uint32_t i = 0; i < elem->count; i++) {
-      switch (faces.rowCount[i]) {
-      case 0:
-      case 1:
-      case 2:
-        allTris = false;
-        break;
-      case 3:
-        ++numTriangles;
-        break;
-      case 4:
-        numTriangles += 2;
-        allTris = false;
-        break;
-      default:
-        numTriangles += faces.rowCount[i] - 2;
-        allTris = false;
-        break;
-      }
-    }
-    if (numTriangles == 0) {
-      return false; // can't have a mesh with 0 triangles!
-    }
-
-    // Allocate storage for the indices.
-    uint32_t num_indices = numTriangles * 3;
-
-    // Fill in the indices. From fastest to slowest:
-    // 1. If all faces are triangles and the indices have type Int or UInt, memcpy them all in one go.
-    // 2. If all faces are triangles and the indices are some other type, do 3 type conversions and assignments per face.
-    // 3. If there are some non-triangle faces and the indices are Int or UInt, memcpy contiguous runs of triangles & triang
-    if (allTris) {
-      if (faces.type == PLYPropertyType::Int || faces.type == PLYPropertyType::UInt) {
-        // All faces are triangles and have a type compatible with trimesh indices.
-        std::memcpy(indices, faces.listData.data(), sizeof(uint32_t) * num_indices);
-      }
-      else {
-        // All faces are triangles but the indices require type conversion.
-        const uint8_t* src = faces.listData.data();
-        const size_t srcIndexBytes = kPLYPropertySize[uint32_t(faces.type)];
-        for (uint32_t i = 0; i < num_indices; i++) {
-          indices[i] = to_int(faces.type, src);
-          src += srcIndexBytes;
-        }
-      }
-    }
-    else {
-      if (faces.type == PLYPropertyType::Int || faces.type == PLYPropertyType::UInt) {
-        // Some faces are not triangles but the indices do not require type conversion.
-        // If we find a contiguous run of triangles, we can memcpy them all in one go.
-        // Faces with a different vertex count have to be handled as they occur.
-        int* dst = indices;
-        uint32_t triStart = 0;
-        bool wasTri = false;
-        for (uint32_t i = 0; i < elem->count; i++) {
-          uint32_t faceVerts = faces.rowCount[i];
-          if (faceVerts == 3) {
-            if (!wasTri) {
-              triStart = i;
-            }
-            wasTri = true;
-          }
-          else {
-            // If we've come to the end of a run of triangles, copy them all over.
-            if (wasTri) {
-              uint32_t numInts = (i - triStart) * 3;
-              std::memcpy(dst, faces.listData.data() + faces.rowStart[triStart], numInts * sizeof(int));
-              dst += numInts;
-            }
-            wasTri = false;
-
-            if (faceVerts >= 4) {
-              const int* src = reinterpret_cast<const int*>(faces.listData.data() + faces.rowStart[i]);
-              uint32_t numTrisAdded = triangulate_polygon(faceVerts, pos, src, dst);
-              dst += numTrisAdded * 3;
-            }
-            else {
-              // Face is degenerate (less than 3 verts) so we ignore it.
-              continue;
-            }
-          }
-        }
-        // If there is a run of triangles at the end of the faces list,
-        // make sure they're copied too.
-        if (wasTri) {
-          uint32_t numInts = (elem->count - triStart) * 3;
-          std::memcpy(dst, faces.listData.data() + faces.rowStart[triStart], numInts * sizeof(int));
-        }
-      }
-      else {
-        // Some faces are not triangles and the indices require type conversion.
-        const size_t srcIndexBytes = kPLYPropertySize[uint32_t(faces.type)];
-        int* dst = indices;
-        std::vector<int> tmp;
-        tmp.reserve(32);
-        for (uint32_t i = 0; i < elem->count; i++) {
-          uint32_t faceVerts = faces.rowCount[i];
-          if (faceVerts < 3) {
-            continue;
-          }
-          const uint8_t* src = faces.listData.data() + faces.rowStart[i];
-          tmp.clear();
-          for (uint32_t v = 0; v < faceVerts; v++) {
-            tmp.push_back(to_int(faces.type, src));
-            src += srcIndexBytes;
-          }
-
-          if (faceVerts == 3) {
-            std::memcpy(dst, tmp.data(), sizeof(int) * 3);
-            dst += 3;
-          }
-          else {
-            uint32_t numTrisAdded = triangulate_polygon(faceVerts, pos, tmp.data(), dst);
-            dst += numTrisAdded * 3;
-          }
-        }
-      }
-    }
-
-    return true;
   }
 
 } // namespace minipbrt
