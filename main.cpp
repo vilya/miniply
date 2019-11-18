@@ -69,7 +69,6 @@ struct TriMesh {
   // Per-vertex data
   float* pos     = nullptr; // has 3*numVerts elements.
   float* normal  = nullptr; // if non-null, has 3 * numVerts elements.
-  float* tangent = nullptr; // if non-null, has 3 * numVerts elements.
   float* uv      = nullptr; // if non-null, has 2 * numVerts elements.
   uint32_t numVerts   = 0;
 
@@ -80,70 +79,10 @@ struct TriMesh {
   ~TriMesh() {
     delete[] pos;
     delete[] normal;
-    delete[] tangent;
     delete[] uv;
     delete[] indices;
   }
 };
-
-
-static bool ply_parse_vertex_element(miniply::PLYReader& reader, TriMesh* trimesh)
-{
-  const miniply::PLYElement* elem = reader.element();
-  trimesh->numVerts = elem->count;
-  trimesh->pos = new float[elem->count * 3];
-  if (!reader.extract_vec3("x", "y", "z", trimesh->pos)) {
-    return false; // invalid data: vertex data MUST include a position
-  }
-
-  if (reader.has_vec3("nx", "ny", "nz")) {
-    trimesh->normal = new float[elem->count * 3];
-    if (!reader.extract_vec3("nx", "ny", "nz", trimesh->normal)) {
-      return false; // invalid data, couldn't parse normal.
-    }
-  }
-
-  bool uvsOK = true;
-  if (reader.has_vec2("u", "v")) {
-    trimesh->uv = new float[elem->count * 2];
-    uvsOK = reader.extract_vec2("u", "v", trimesh->uv);
-  }
-  else if (reader.has_vec2("s", "t")) {
-    trimesh->uv = new float[elem->count * 2];
-    uvsOK = reader.extract_vec2("s", "t", trimesh->uv);
-  }
-  else if (reader.has_vec2("texture_u", "texture_v")) {
-    trimesh->uv = new float[elem->count * 2];
-    uvsOK = reader.extract_vec2("texture_u", "texture_v", trimesh->uv);
-  }
-  else if (reader.has_vec2("texture_s", "texture_t")) {
-    trimesh->uv = new float[elem->count * 2];
-    uvsOK = reader.extract_vec2("texture_s", "texture_t", trimesh->uv);
-  }
-  if (!uvsOK) {
-    return false; // invalid data, couldn't parse tex coords
-  }
-
-  return true;
-}
-
-
-static bool ply_parse_face_element(miniply::PLYReader& reader, TriMesh* trimesh)
-{
-  // Find the indices property.
-  uint32_t numIndices = reader.count_triangles("vertex_indices") * 3;
-  if (numIndices == 0) {
-    return false;
-  }
-
-  trimesh->numIndices = numIndices;
-  trimesh->indices = new int[numIndices];
-  if (!reader.extract_triangles("vertex_indices", trimesh->pos, trimesh->numVerts, trimesh->indices)) {
-    return false;
-  }
-
-  return true;
-}
 
 
 static TriMesh* parse_file_with_miniply(const char* filename)
@@ -157,18 +96,49 @@ static TriMesh* parse_file_with_miniply(const char* filename)
   bool gotVerts = false;
   bool gotFaces = false;
   while (reader.has_element() && (!gotVerts || !gotFaces)) {
-    const miniply::PLYElement* elem = reader.element();
-    if (!gotVerts && strcmp(elem->name.c_str(), "vertex") == 0) {
-      bool ok = reader.load_element() && ply_parse_vertex_element(reader, trimesh);
-      if (!ok) {
-        break; // failed to load data for this element.
+    if (!gotVerts && reader.element_is("vertex")) {
+      if (!reader.load_element()) {
+        break;
+      }
+      uint32_t propIdxs[3];
+      if (!reader.find_pos(propIdxs)) {
+        break;
+      }
+      trimesh->numVerts = reader.num_rows();
+      trimesh->pos = new float[trimesh->numVerts * 3];
+      reader.extract_columns(propIdxs, 3, miniply::PLYPropertyType::Float, trimesh->pos);
+      if (reader.find_normal(propIdxs)) {
+        trimesh->normal = new float[trimesh->numVerts * 3];
+        reader.extract_columns(propIdxs, 3, miniply::PLYPropertyType::Float, trimesh->normal);
+      }
+      if (reader.find_texcoord(propIdxs)) {
+        trimesh->uv = new float[trimesh->numVerts * 2];
+        reader.extract_columns(propIdxs, 2, miniply::PLYPropertyType::Float, trimesh->uv);
       }
       gotVerts = true;
     }
-    else if (!gotFaces && strcmp(elem->name.c_str(), "face") == 0) {
-      bool ok = reader.load_element() && ply_parse_face_element(reader, trimesh);
-      if (!ok) {
-        break; // failed to load data for this element.
+    else if (!gotFaces && reader.element_is("face")) {
+      if (!reader.load_element()) {
+        break;
+      }
+      uint32_t propIdx;
+      if (!reader.find_indices(&propIdx)) {
+        break;
+      }
+      bool polys = reader.requires_triangulation(propIdx);
+      if (polys && !gotVerts) {
+        fprintf(stderr, "Error: face data needing triangulation found before vertex data.\n");
+        break;
+      }
+      if (polys) {
+        trimesh->numIndices = reader.num_triangles(propIdx) * 3;
+        trimesh->indices = new int[trimesh->numIndices];
+        reader.extract_triangles(propIdx, trimesh->pos, trimesh->numVerts, miniply::PLYPropertyType::Int, trimesh->indices);
+      }
+      else {
+        trimesh->numIndices = reader.num_rows() * 3;
+        trimesh->indices = new int[trimesh->numIndices];
+        reader.extract_list_column(propIdx, miniply::PLYPropertyType::Int, trimesh->indices);
       }
       gotFaces = true;
     }

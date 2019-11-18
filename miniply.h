@@ -94,20 +94,60 @@ namespace miniply {
     ~PLYReader();
 
     bool valid() const;
-
     bool has_element() const;
     const PLYElement* element() const;
     bool load_element();
     void next_element();
 
-    bool has_vec2(const char* xname, const char* yname) const;
-    bool has_vec3(const char* xname, const char* yname, const char* zname) const;
-    bool extract_vec2(const char* xname, const char* yname, float* dest) const;
-    bool extract_vec3(const char* xname, const char* yname, const char* zname, float* dest) const;
+    /// Check whether the current element has the given name.
+    bool element_is(const char* name) const;
 
-    uint32_t count_triangles(const char* propName) const;
-    bool all_faces_are_triangles(const char* propName) const;
-    bool extract_triangles(const char* propname, const float pos[], uint32_t numVerts, int indices[]) const;
+    /// Number of rows in the current element.
+    uint32_t num_rows() const;
+
+    /// Returns the index for the named property in the current element, or
+    /// `kInvalidIndex` if it can't be found.
+    uint32_t find_property(const char* name) const;
+
+    /// Copy the data for the specified columns into `dest`, which must be an
+    /// array with at least enough space to hold all of the extracted column
+    /// data. `propIdxs` is an array containing the indexes of the properties
+    /// to copy; it has `numProps` elements.
+    ///
+    /// `destType` specifies the data type for values stored in `dest`. All
+    /// column values will be converted to this type if necessary.
+    ///
+    /// This function does some checks up front to pick the most efficient code
+    /// path for extracting the data. It considers:
+    /// (a) whether any data conversion is required.
+    /// (b) whether all column values to be extracted are contiguous in memory.
+    /// (c) whether the data to be extracted for consecutive rows is contiguous
+    ///     in memory.
+    /// In the best case it reduces to a single memcpy call. In the worst case
+    /// we must iterate over all values to be copied, applying type conversions
+    /// as we go.
+    ///
+    /// Note that this function does not handle list-valued columns. Use
+    /// `extract_list_column()` for those instead.
+    bool extract_columns(const uint32_t propIdxs[], uint32_t numProps, PLYPropertyType destType, void* dest) const;
+
+    /// Get the array of item counts for a list property. Entry `i` in this
+    /// array is the number of items in the `i`th list.
+    const uint32_t* get_list_counts(uint32_t propIdx) const;
+
+    const uint32_t* get_list_start_offsets(uint32_t propIdx) const;
+    const uint8_t* get_list_data(uint32_t propIdx) const;
+    bool extract_list_column(uint32_t propIdx, PLYPropertyType destType, void* dest) const;
+
+    uint32_t num_triangles(uint32_t propIdx) const;
+    bool requires_triangulation(uint32_t propIdx) const;
+    bool extract_triangles(uint32_t propIdx, const float pos[], uint32_t numVerts, PLYPropertyType destType, void* dest) const;
+
+    bool find_pos(uint32_t propIdxs[3]) const;
+    bool find_normal(uint32_t propIdxs[3]) const;
+    bool find_texcoord(uint32_t propIdxs[2]) const;
+    bool find_color(uint32_t propIdxs[3]) const;
+    bool find_indices(uint32_t propIdxs[1]) const;
 
   private:
     bool refill_buffer();

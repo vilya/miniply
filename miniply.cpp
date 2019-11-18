@@ -387,6 +387,43 @@ namespace miniply {
   }
 
 
+  template <class T>
+  static void copy_and_convert_to(T* dest, const uint8_t* src, PLYPropertyType srcType)
+  {
+    switch (srcType) {
+    case PLYPropertyType::Char:   *dest = static_cast<T>(*reinterpret_cast<const int8_t*>(src)); break;
+    case PLYPropertyType::UChar:  *dest = static_cast<T>(*reinterpret_cast<const uint8_t*>(src)); break;
+    case PLYPropertyType::Short:  *dest = static_cast<T>(*reinterpret_cast<const int16_t*>(src)); break;
+    case PLYPropertyType::UShort: *dest = static_cast<T>(*reinterpret_cast<const uint16_t*>(src)); break;
+    case PLYPropertyType::Int:    *dest = static_cast<T>(*reinterpret_cast<const int*>(src)); break;
+    case PLYPropertyType::UInt:   *dest = static_cast<T>(*reinterpret_cast<const uint32_t*>(src)); break;
+    case PLYPropertyType::Float:  *dest = static_cast<T>(*reinterpret_cast<const float*>(src)); break;
+    case PLYPropertyType::Double: *dest = static_cast<T>(*reinterpret_cast<const double*>(src)); break;
+    case PLYPropertyType::None:   break;
+    }
+  }
+
+
+  static void copy_and_convert(uint8_t* dest, PLYPropertyType destType, const uint8_t* src, PLYPropertyType srcType)
+  {
+    if (destType == srcType) {
+      std::memcpy(dest, src, kPLYPropertySize[uint32_t(destType)]);
+      return;
+    }
+    switch (destType) {
+    case PLYPropertyType::Char:   copy_and_convert_to(reinterpret_cast<int8_t*>  (dest), src, srcType); break;
+    case PLYPropertyType::UChar:  copy_and_convert_to(reinterpret_cast<uint8_t*> (dest), src, srcType); break;
+    case PLYPropertyType::Short:  copy_and_convert_to(reinterpret_cast<int16_t*> (dest), src, srcType); break;
+    case PLYPropertyType::UShort: copy_and_convert_to(reinterpret_cast<uint16_t*>(dest), src, srcType); break;
+    case PLYPropertyType::Int:    copy_and_convert_to(reinterpret_cast<int32_t*> (dest), src, srcType); break;
+    case PLYPropertyType::UInt:   copy_and_convert_to(reinterpret_cast<uint32_t*>(dest), src, srcType); break;
+    case PLYPropertyType::Float:  copy_and_convert_to(reinterpret_cast<float*>   (dest), src, srcType); break;
+    case PLYPropertyType::Double: copy_and_convert_to(reinterpret_cast<double*>  (dest), src, srcType); break;
+    case PLYPropertyType::None:   break;
+    }
+  }
+
+
   //
   // PLYElement methods
   //
@@ -695,384 +732,379 @@ namespace miniply {
   }
 
 
-  bool PLYReader::has_vec2(const char* xname, const char* yname) const
+  bool PLYReader::element_is(const char* name) const
   {
-    assert(has_element());
-    const PLYElement* elem = element();
-    return (elem->find_property(xname) != kInvalidIndex) &&
-           (elem->find_property(yname) != kInvalidIndex);
+    return has_element() && strcmp(element()->name.c_str(), name) == 0;
   }
 
 
-  bool PLYReader::has_vec3(const char* xname, const char* yname, const char* zname) const
+  uint32_t PLYReader::num_rows() const
   {
-    assert(has_element());
-    const PLYElement* elem = element();
-    return (elem->find_property(xname) != kInvalidIndex) &&
-           (elem->find_property(yname) != kInvalidIndex) &&
-           (elem->find_property(zname) != kInvalidIndex);
+    return has_element() ? element()->count : 0;
   }
 
 
-  static float to_float(PLYPropertyType type, const uint8_t* tmp)
+  uint32_t PLYReader::find_property(const char* name) const
   {
-    switch (type) {
-    case PLYPropertyType::Char:
-      return static_cast<float>(*reinterpret_cast<const int8_t*>(tmp));
-    case PLYPropertyType::UChar:
-      return static_cast<float>(*reinterpret_cast<const uint8_t*>(tmp));
-    case PLYPropertyType::Short:
-      return static_cast<float>(*reinterpret_cast<const int16_t*>(tmp));
-    case PLYPropertyType::UShort:
-      return static_cast<float>(*reinterpret_cast<const uint16_t*>(tmp));
-    case PLYPropertyType::Int:
-      return static_cast<float>(*reinterpret_cast<const int*>(tmp));
-    case PLYPropertyType::UInt:
-      return static_cast<float>(*reinterpret_cast<const uint32_t*>(tmp));
-    case PLYPropertyType::Float:
-      return *reinterpret_cast<const float*>(tmp);
-    case PLYPropertyType::Double:
-      return static_cast<float>(*reinterpret_cast<const double*>(tmp));
-    default:
-      return 0.0f;
-    }
+    return has_element() ? element()->find_property(name) : kInvalidIndex;
   }
 
 
-  static int to_int(PLYPropertyType type, const uint8_t* tmp)
+  bool PLYReader::extract_columns(const uint32_t propIdxs[], uint32_t numProps, PLYPropertyType destType, void *dest) const
   {
-    switch (type) {
-    case PLYPropertyType::Char:
-      return static_cast<int>(*reinterpret_cast<const int8_t*>(tmp));
-    case PLYPropertyType::UChar:
-      return static_cast<int>(*reinterpret_cast<const uint8_t*>(tmp));
-    case PLYPropertyType::Short:
-      return static_cast<int>(*reinterpret_cast<const int16_t*>(tmp));
-    case PLYPropertyType::UShort:
-      return static_cast<int>(*reinterpret_cast<const uint16_t*>(tmp));
-    case PLYPropertyType::Int:
-      return *reinterpret_cast<const int*>(tmp);
-    case PLYPropertyType::UInt:
-      return static_cast<int>(*reinterpret_cast<const uint32_t*>(tmp));
-    case PLYPropertyType::Float:
-      return static_cast<int>(*reinterpret_cast<const float*>(tmp));
-    case PLYPropertyType::Double:
-      return static_cast<int>(*reinterpret_cast<const double*>(tmp));
-    default:
-      return 0;
-    }
-  }
-
-
-  bool PLYReader::extract_vec2(const char* xname, const char* yname, float* dest) const
-  {
-    assert(has_element());
-
-    const PLYElement* elem = element();
-    uint32_t xidx = elem->find_property(xname);
-    uint32_t yidx = elem->find_property(yname);
-    if (xidx == kInvalidIndex || yidx == kInvalidIndex) {
+    if (numProps == 0) {
       return false;
     }
 
-    const PLYProperty& x = elem->properties[xidx];
-    const PLYProperty& y = elem->properties[yidx];
-    if (x.countType != PLYPropertyType::None || y.countType != PLYPropertyType::None) {
-      return false;
-    }
-
-    // In order from fastest to slowest:
-    // 1. if x and y are contiguous floats and are the only properties in this element, use a single memcpy.
-    // 2. if x and y are contiguous floats, do 1 memcpy per row.
-    // 3. if x and y are both floats, do 2 memcpys per row.
-    // 4. if x and y are not both floats, then do 2 type conversions and assignments per row
-    if (x.type == PLYPropertyType::Float &&
-        y.type == PLYPropertyType::Float) {
-      // x and y are both floats, could be any of cases 1, 2 or 3.
-      if (y.offset == (x.offset + sizeof(float))) {
-        // x and y are contiguous floats, could be either case 1 or case 2
-        if (elem->properties.size() == 2) {
-          // case 1
-          std::memcpy(dest, m_elementData.data(), sizeof(float) * elem->count * 2);
-        }
-        else {
-          // case 2
-          const uint8_t* src = m_elementData.data() + x.offset;
-          const uint8_t* srcEnd = m_elementData.data() + m_elementData.size();
-          for (; src < srcEnd; src += elem->rowStride) {
-            std::memcpy(dest, src, sizeof(float) * 2);
-            dest += 2;
-          }
-        }
-      }
-      else {
-        // x and y are not contiguous --> case 3
-        const uint8_t* row = m_elementData.data();
-        const uint8_t* rowEnd = m_elementData.data() + m_elementData.size();
-        for (; row < rowEnd; row += elem->rowStride) {
-          dest[0] = *reinterpret_cast<const float*>(row + x.offset);
-          dest[1] = *reinterpret_cast<const float*>(row + y.offset);
-          dest += 2;
-        }
-      }
-    }
-    else {
-      // either x, y or both are not floats --> case 4
-      const uint8_t* row = m_elementData.data();
-      const uint8_t* rowEnd = m_elementData.data() + m_elementData.size();
-      for (; row < rowEnd; row += elem->rowStride) {
-        dest[0] = to_float(x.type, row + x.offset);
-        dest[1] = to_float(y.type, row + y.offset);
-        dest += 2;
-      }
-    }
-    return true;
-  }
-
-
-  bool PLYReader::extract_vec3(const char* xname, const char* yname, const char* zname, float* dest) const
-  {
-    assert(has_element());
-
     const PLYElement* elem = element();
-    uint32_t xidx = elem->find_property(xname);
-    uint32_t yidx = elem->find_property(yname);
-    uint32_t zidx = elem->find_property(zname);
-    if (xidx == kInvalidIndex || yidx == kInvalidIndex || zidx == kInvalidIndex) {
-      return false;
-    }
 
-    const PLYProperty& x = elem->properties[xidx];
-    const PLYProperty& y = elem->properties[yidx];
-    const PLYProperty& z = elem->properties[zidx];
-    if (x.countType != PLYPropertyType::None || y.countType != PLYPropertyType::None || z.countType != PLYPropertyType::None) {
-      return false;
-    }
-
-    // In order from fastest to slowest:
-    // 1. if xyz are contiguous floats and are the only properties in this element, use a single memcpy.
-    // 2. if xyz are contiguous floats, do 1 memcpy per row.
-    // 3. if xyz are all floats, do 3 memcpys per row.
-    // 4. if xyz are not all floats, then do 3 type conversions and assignments per row
-    if (x.type == PLYPropertyType::Float &&
-        y.type == PLYPropertyType::Float &&
-        z.type == PLYPropertyType::Float) {
-      // xyz are all floats, could be any of cases 1, 2 or 3.
-      if (y.offset == (x.offset + sizeof(float)) && z.offset == (y.offset + sizeof(float))) {
-        // xyz are contiguous floats, could be either case 1 or case 2
-        if (elem->properties.size() == 3) {
-          // case 1
-          std::memcpy(dest, m_elementData.data(), sizeof(float) * elem->count * 3);
-        }
-        else {
-          // case 2
-          const uint8_t* src = m_elementData.data() + x.offset;
-          const uint8_t* srcEnd = m_elementData.data() + m_elementData.size();
-          for (; src < srcEnd; src += elem->rowStride) {
-            std::memcpy(dest, src, sizeof(float) * 3);
-            dest += 3;
-          }
-        }
-      }
-      else {
-        // x and y are not contiguous --> case 3
-        const uint8_t* row = m_elementData.data();
-        const uint8_t* rowEnd = m_elementData.data() + m_elementData.size();
-        for (; row < rowEnd; row += elem->rowStride) {
-          dest[0] = *reinterpret_cast<const float*>(row + x.offset);
-          dest[1] = *reinterpret_cast<const float*>(row + y.offset);
-          dest[2] = *reinterpret_cast<const float*>(row + z.offset);
-          dest += 3;
-        }
-      }
-    }
-    else {
-      // either x, y or both are not floats --> case 4
-      const uint8_t* row = m_elementData.data();
-      const uint8_t* rowEnd = m_elementData.data() + m_elementData.size();
-      for (; row < rowEnd; row += elem->rowStride) {
-        dest[0] = to_float(x.type, row + x.offset);
-        dest[1] = to_float(y.type, row + y.offset);
-        dest[1] = to_float(z.type, row + z.offset);
-        dest += 3;
-      }
-    }
-    return true;
-  }
-
-
-  uint32_t PLYReader::count_triangles(const char* propName) const
-  {
-    // Find the indices property.
-    const PLYElement* elem = element();
-    uint32_t indicesIdx = elem->find_property(propName);
-    if (indicesIdx == kInvalidIndex) {
-      return 0; // missing indices property
-    }
-
-    const PLYProperty& faces = elem->properties[indicesIdx];
-    if (faces.countType == PLYPropertyType::None) {
-      return 0; // invalid indices property, should be a list
-    }
-
-    // Count the number of triangles in the mesh.
-    uint32_t numTriangles = 0;
-    for (uint32_t i = 0; i < elem->count; i++) {
-      if (faces.rowCount[i] >= 3) {
-        numTriangles += faces.rowCount[i] - 2;
-      }
-    }
-
-    return numTriangles;
-  }
-
-
-  bool PLYReader::all_faces_are_triangles(const char *propName) const
-  {
-    // Find the indices property.
-    const PLYElement* elem = element();
-    uint32_t indicesIdx = elem->find_property(propName);
-    if (indicesIdx == kInvalidIndex) {
-      return 0; // missing indices property
-    }
-
-    const PLYProperty& faces = elem->properties[indicesIdx];
-    if (faces.countType == PLYPropertyType::None) {
-      return 0; // invalid indices property, should be a list
-    }
-
-    // Count the number of triangles in the mesh.
-    for (uint32_t i = 0; i < elem->count; i++) {
-      if (faces.rowCount[i] != 3) {
+    // Make sure all property indexes are valid and that none of the properties
+    // are lists (this function only extracts non-list data).
+    for (uint32_t i = 0; i < numProps; i++) {
+      if (propIdxs[i] >= elem->properties.size()) {
         return false;
       }
     }
 
-    return true;
-  }
-
-
-  // We assume that `indices` has already been allocated, with enough space to
-  // hold all triangles.
-  //
-  // If there are any invalid indices on a polygon (i.e. where idx < 0 or
-  // idx >= numVerts) then that face will be skipped.
-  bool PLYReader::extract_triangles(const char* propname, const float pos[], uint32_t numVerts, int indices[]) const
-  {
-    // Find the indices property.
-    const PLYElement* elem = element();
-    uint32_t indicesIdx = elem->find_property(propname);
-    if (indicesIdx == kInvalidIndex) {
-      return false; // missing indices property
+    // Find out whether we have contiguous columns. If so, we may be able to
+    // use a more efficient data extraction technique.
+    bool contiguousCols = true;
+    uint32_t expectedOffset = elem->properties[propIdxs[0]].offset;
+    for (uint32_t i = 0; i < numProps; i++) {
+      uint32_t propIdx = propIdxs[i];
+      const PLYProperty& prop = elem->properties[propIdx];
+      if (prop.offset != expectedOffset) {
+        contiguousCols = false;
+        break;
+      }
+      expectedOffset = prop.offset + kPLYPropertySize[uint32_t(prop.type)];
     }
 
-    const PLYProperty& faces = elem->properties[indicesIdx];
-    if (faces.countType == PLYPropertyType::None) {
-      return false; // invalid indices property, should be a list
+    // If the row we're extracting is contiguous in memory (i.e. there are no
+    // gaps anywhere in a row - start, end or middle), we can use an even MORE
+    // efficient data extraction technique.
+    bool contiguousRows = contiguousCols &&
+                          (elem->properties[propIdxs[0]].offset == 0) &&
+                          (expectedOffset == elem->rowStride);
+
+    // If no data conversion is required, we can memcpy chunks of data
+    // directly over to `dest`. How big those chunks will be depends on whether
+    // the columns and/or rows are contiguous, as determined above.
+    bool conversionRequired = false;
+    for (uint32_t i = 0; i < numProps; i++) {
+      uint32_t propIdx = propIdxs[i];
+      const PLYProperty& prop = elem->properties[propIdx];
+      if (prop.type != destType) {
+        conversionRequired = true;
+        break;
+      }
     }
 
-    // Count the number of triangles in the mesh.
-    uint32_t numTriangles = count_triangles(propname);
-    if (numTriangles == 0) {
-      return false; // can't have a mesh with 0 triangles!
-    }
-
-    // Allocate storage for the indices.
-    uint32_t numIndices = numTriangles * 3;
-
-    // Fill in the indices. From fastest to slowest:
-    // 1. If all faces are triangles and the indices have type Int or UInt, memcpy them all in one go.
-    // 2. If all faces are triangles and the indices are some other type, do 3 type conversions and assignments per face.
-    // 3. If there are some non-triangle faces and the indices are Int or UInt, memcpy contiguous runs of triangles & triang
-    if (all_faces_are_triangles(propname)) {
-      if (faces.type == PLYPropertyType::Int || faces.type == PLYPropertyType::UInt) {
-        // All faces are triangles and have a type compatible with trimesh indices.
-        std::memcpy(indices, faces.listData.data(), sizeof(uint32_t) * numIndices);
+    uint8_t* to = reinterpret_cast<uint8_t*>(dest);
+    if (!conversionRequired) {
+      // If no data conversion is required, we can just use memcpy to get
+      // values into dest.
+      if (contiguousRows) {
+        // Most efficient case is when the rows are contiguous. It means we're
+        // simply copying the entire data block for this element, which we can
+        // do with a single memcpy.
+        std::memcpy(to, m_elementData.data(), m_elementData.size());
+      }
+      else if (contiguousCols) {
+        // If the rows aren't contiguous, but the columns we're extracting
+        // within each row are, then we can do a single memcpy per row.
+        const uint8_t* from = m_elementData.data() + elem->properties[propIdxs[0]].offset;
+        const uint8_t* end = m_elementData.data() + m_elementData.size();
+        const size_t numBytes = expectedOffset - elem->properties[propIdxs[0]].offset;
+        while (from < end) {
+          std::memcpy(to, from, numBytes);
+          from += elem->rowStride;
+          to += numBytes;
+        }
       }
       else {
-        // All faces are triangles but the indices require type conversion.
-        const uint8_t* src = faces.listData.data();
-        const size_t srcIndexBytes = kPLYPropertySize[uint32_t(faces.type)];
-        for (uint32_t i = 0; i < numIndices; i++) {
-          indices[i] = to_int(faces.type, src);
-          src += srcIndexBytes;
+        // If the columns aren't contiguous, we must memcpy each one separately.
+        const uint8_t* row = m_elementData.data();
+        const uint8_t* end = m_elementData.data() + m_elementData.size();
+        uint8_t* to = reinterpret_cast<uint8_t*>(dest);
+        size_t colBytes = kPLYPropertySize[uint32_t(destType)]; // size of an output column in bytes.
+        while (row < end) {
+          for (uint32_t i = 0; i < numProps; i++) {
+            uint32_t propIdx = propIdxs[i];
+            const PLYProperty& prop = elem->properties[propIdx];
+            std::memcpy(to, row + prop.offset, colBytes);
+            to += colBytes;
+          }
+          row += elem->rowStride;
         }
       }
     }
     else {
-      if (faces.type == PLYPropertyType::Int || faces.type == PLYPropertyType::UInt) {
-        // Some faces are not triangles but the indices do not require type conversion.
-        // If we find a contiguous run of triangles, we can memcpy them all in one go.
-        // Faces with a different vertex count have to be handled as they occur.
-        int* dst = indices;
-        uint32_t triStart = 0;
-        bool wasTri = false;
-        for (uint32_t i = 0; i < elem->count; i++) {
-          uint32_t faceVerts = faces.rowCount[i];
-          if (faceVerts == 3) {
-            if (!wasTri) {
-              triStart = i;
-            }
-            wasTri = true;
-          }
-          else {
-            // If we've come to the end of a run of triangles, copy them all over.
-            if (wasTri) {
-              uint32_t numInts = (i - triStart) * 3;
-              std::memcpy(dst, faces.listData.data() + faces.rowStart[triStart], numInts * sizeof(int));
-              dst += numInts;
-            }
-            wasTri = false;
-
-            if (faceVerts >= 4) {
-              const int* src = reinterpret_cast<const int*>(faces.listData.data() + faces.rowStart[i]);
-              uint32_t numTrisAdded = triangulate_polygon(faceVerts, pos, numVerts, src, dst);
-              dst += numTrisAdded * 3;
-            }
-            else {
-              // Face is degenerate (less than 3 verts) so we ignore it.
-              continue;
-            }
-          }
+      // We will have to do data type conversions on the column values here. We
+      // cannot simply use memcpy in this case, every column has to be
+      // processed separately.
+      const uint8_t* row = m_elementData.data();
+      const uint8_t* end = m_elementData.data() + m_elementData.size();
+      uint8_t* to = reinterpret_cast<uint8_t*>(dest);
+      size_t colBytes = kPLYPropertySize[uint32_t(destType)]; // size of an output column in bytes.
+      while (row < end) {
+        for (uint32_t i = 0; i < numProps; i++) {
+          uint32_t propIdx = propIdxs[i];
+          const PLYProperty& prop = elem->properties[propIdx];
+          copy_and_convert(to, destType, row + prop.offset, prop.type);
+          to += colBytes;
         }
-        // If there is a run of triangles at the end of the faces list,
-        // make sure they're copied too.
-        if (wasTri) {
-          uint32_t numInts = (elem->count - triStart) * 3;
-          std::memcpy(dst, faces.listData.data() + faces.rowStart[triStart], numInts * sizeof(int));
-        }
-      }
-      else {
-        // Some faces are not triangles and the indices require type conversion.
-        const size_t srcIndexBytes = kPLYPropertySize[uint32_t(faces.type)];
-        int* dst = indices;
-        std::vector<int> tmp;
-        tmp.reserve(32);
-        for (uint32_t i = 0; i < elem->count; i++) {
-          uint32_t faceVerts = faces.rowCount[i];
-          if (faceVerts < 3) {
-            continue;
-          }
-          const uint8_t* src = faces.listData.data() + faces.rowStart[i];
-          tmp.clear();
-          for (uint32_t v = 0; v < faceVerts; v++) {
-            tmp.push_back(to_int(faces.type, src));
-            src += srcIndexBytes;
-          }
-
-          if (faceVerts == 3) {
-            std::memcpy(dst, tmp.data(), sizeof(int) * 3);
-            dst += 3;
-          }
-          else {
-            uint32_t numTrisAdded = triangulate_polygon(faceVerts, pos, numVerts, tmp.data(), dst);
-            dst += numTrisAdded * 3;
-          }
-        }
+        row += elem->rowStride;
       }
     }
 
     return true;
+  }
+
+
+  const uint32_t* PLYReader::get_list_counts(uint32_t propIdx) const
+  {
+    if (!has_element() || propIdx >= element()->properties.size() || element()->properties[propIdx].countType == PLYPropertyType::None) {
+      return nullptr;
+    }
+    return element()->properties[propIdx].rowCount.data();
+  }
+
+
+  const uint32_t* PLYReader::get_list_start_offsets(uint32_t propIdx) const
+  {
+    if (!has_element() || propIdx >= element()->properties.size() || element()->properties[propIdx].countType == PLYPropertyType::None) {
+      return nullptr;
+    }
+    return element()->properties[propIdx].rowStart.data();
+  }
+
+
+  const uint8_t* PLYReader::get_list_data(uint32_t propIdx) const
+  {
+    if (!has_element() || propIdx >= element()->properties.size() || element()->properties[propIdx].countType == PLYPropertyType::None) {
+      return nullptr;
+    }
+    return element()->properties[propIdx].listData.data();
+  }
+
+
+  bool PLYReader::extract_list_column(uint32_t propIdx, PLYPropertyType destType, void *dest) const
+  {
+    if (!has_element() || propIdx >= element()->properties.size() || element()->properties[propIdx].countType == PLYPropertyType::None) {
+      return false;
+    }
+
+    const PLYProperty& prop = element()->properties[propIdx];
+    if (destType == prop.type) {
+      // If no type conversion is required, we can just copy the list data
+      // directly over with a single memcpy.
+      std::memcpy(dest, prop.listData.data(), prop.listData.size());
+    }
+    else {
+      // If type conversion is required we'll have to process each list value separately.
+      const uint8_t* from = prop.listData.data();
+      const uint8_t* end = prop.listData.data() + prop.listData.size();
+      uint8_t* to = reinterpret_cast<uint8_t*>(dest);
+      const size_t toBytes = kPLYPropertySize[uint32_t(destType)];
+      const size_t fromBytes = kPLYPropertySize[uint32_t(prop.type)];
+      while (from < end) {
+        copy_and_convert(to, destType, from, prop.type);
+        to += toBytes;
+        from += fromBytes;
+      }
+    }
+
+    return true;
+  }
+
+
+  uint32_t PLYReader::num_triangles(uint32_t propIdx) const
+  {
+    const uint32_t* counts = get_list_counts(propIdx);
+    if (counts == nullptr) {
+      return 0;
+    }
+
+    const uint32_t numRows = element()->count;
+    uint32_t num = 0;
+    for (uint32_t i = 0; i < numRows; i++) {
+      if (counts[i] >= 3) {
+        num += counts[i] - 2;
+      }
+    }
+    return num;
+  }
+
+
+  bool PLYReader::requires_triangulation(uint32_t propIdx) const
+  {
+    const uint32_t* counts = get_list_counts(propIdx);
+    if (counts == nullptr) {
+      return false;
+    }
+
+    const uint32_t numRows = element()->count;
+    for (uint32_t i = 0; i < numRows; i++) {
+      if (counts[i] != 3) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+
+  bool PLYReader::extract_triangles(uint32_t propIdx, const float pos[], uint32_t numVerts, PLYPropertyType destType, void *dest) const
+  {
+    if (!requires_triangulation(propIdx)) {
+      return extract_list_column(propIdx, destType, dest);
+    }
+
+    const PLYElement* elem = element();
+    const PLYProperty& prop = elem->properties[propIdx];
+
+    const uint32_t* counts = prop.rowCount.data();
+    const uint32_t* starts = prop.rowStart.data();
+    const uint8_t*  data   = prop.listData.data();
+
+    uint8_t* to = reinterpret_cast<uint8_t*>(dest);
+
+    bool convertSrc = elem->properties[propIdx].type != PLYPropertyType::Int;
+    bool convertDst = destType != PLYPropertyType::Int;
+
+    std::vector<int> faceIndices;
+    faceIndices.reserve(32);
+
+    std::vector<int> triIndices;
+    triIndices.reserve(64);
+
+    size_t srcValBytes  = kPLYPropertySize[uint32_t(prop.type)];
+    size_t destValBytes = kPLYPropertySize[uint32_t(destType)];
+
+    if (convertSrc && convertDst) {
+      std::vector<int> faceIndices, triIndices;
+      faceIndices.reserve(32);
+      triIndices.reserve(64);
+      for (uint32_t faceIdx = 0; faceIdx < elem->count; faceIdx++) {
+        const uint8_t* face = data + starts[faceIdx];
+        const uint8_t* faceEnd = face + srcValBytes * counts[faceIdx];
+        faceIndices.clear();
+        faceIndices.reserve(counts[faceIdx]);
+        for (; face < faceEnd; face += srcValBytes) {
+          int idx = -1;
+          copy_and_convert_to(&idx, face, prop.type);
+          faceIndices.push_back(idx);
+        }
+
+        triIndices.resize((counts[faceIdx] - 2) * 3);
+        triangulate_polygon(counts[faceIdx], pos, numVerts, faceIndices.data(), triIndices.data());
+        for (int idx : triIndices) {
+          copy_and_convert(to, destType, reinterpret_cast<const uint8_t*>(&idx), PLYPropertyType::Int);
+          to += destValBytes;
+        }
+      }
+    }
+    else if (convertSrc) {
+      std::vector<int> faceIndices;
+      faceIndices.reserve(32);
+      for (uint32_t faceIdx = 0; faceIdx < elem->count; faceIdx++) {
+        const uint8_t* face = data + starts[faceIdx];
+        const uint8_t* faceEnd = face + srcValBytes * counts[faceIdx];
+        faceIndices.clear();
+        faceIndices.reserve(counts[faceIdx]);
+        for (; face < faceEnd; face += srcValBytes) {
+          int idx = -1;
+          copy_and_convert_to(&idx, face, prop.type);
+          faceIndices.push_back(idx);
+        }
+
+        uint32_t numTris = triangulate_polygon(counts[faceIdx], pos, numVerts, faceIndices.data(), reinterpret_cast<int*>(to));
+        to += numTris * 3 * destValBytes;
+      }
+    }
+    else if (convertDst) {
+      std::vector<int> triIndices;
+      triIndices.reserve(64);
+      for (uint32_t faceIdx = 0; faceIdx < elem->count; faceIdx++) {
+        const uint8_t* face = data + starts[faceIdx];
+
+        triIndices.resize((counts[faceIdx] - 2) * 3);
+        triangulate_polygon(counts[faceIdx], pos, numVerts, reinterpret_cast<const int*>(face), triIndices.data());
+        for (int idx : triIndices) {
+          copy_and_convert(to, destType, reinterpret_cast<const uint8_t*>(&idx), PLYPropertyType::Int);
+          to += destValBytes;
+        }
+      }
+    }
+    else {
+      for (uint32_t faceIdx = 0; faceIdx < elem->count; faceIdx++) {
+        const uint8_t* face = data + starts[faceIdx];
+        uint32_t numTris = triangulate_polygon(counts[faceIdx], pos, numVerts, reinterpret_cast<const int*>(face), reinterpret_cast<int*>(to));
+        to += numTris * 3 * destValBytes;
+      }
+    }
+
+    return true;
+  }
+
+
+  bool PLYReader::find_pos(uint32_t propIdxs[3]) const
+  {
+    propIdxs[0] = find_property("x");
+    propIdxs[1] = find_property("y");
+    propIdxs[2] = find_property("z");
+    return (propIdxs[0] != kInvalidIndex) && (propIdxs[1] != kInvalidIndex) && (propIdxs[2] != kInvalidIndex);
+  }
+
+
+  bool PLYReader::find_normal(uint32_t propIdxs[3]) const
+  {
+    propIdxs[0] = find_property("nx");
+    propIdxs[1] = find_property("ny");
+    propIdxs[2] = find_property("nz");
+    return (propIdxs[0] != kInvalidIndex) && (propIdxs[1] != kInvalidIndex) && (propIdxs[2] != kInvalidIndex);
+  }
+
+
+  bool PLYReader::find_texcoord(uint32_t propIdxs[2]) const
+  {
+    propIdxs[0] = find_property("u");
+    propIdxs[1] = find_property("v");
+    if (propIdxs[0] != kInvalidIndex && propIdxs[1] != kInvalidIndex) {
+      return true;
+    }
+    propIdxs[0] = find_property("s");
+    propIdxs[1] = find_property("t");
+    if (propIdxs[0] != kInvalidIndex && propIdxs[1] != kInvalidIndex) {
+      return true;
+    }
+    propIdxs[0] = find_property("texture_u");
+    propIdxs[1] = find_property("texture_v");
+    if (propIdxs[0] != kInvalidIndex && propIdxs[1] != kInvalidIndex) {
+      return true;
+    }
+    propIdxs[0] = find_property("texture_s");
+    propIdxs[1] = find_property("texture_t");
+    if (propIdxs[0] != kInvalidIndex && propIdxs[1] != kInvalidIndex) {
+      return true;
+    }
+    return false;
+  }
+
+
+  bool PLYReader::find_color(uint32_t propIdxs[3]) const
+  {
+    propIdxs[0] = find_property("r");
+    propIdxs[1] = find_property("g");
+    propIdxs[2] = find_property("b");
+    return (propIdxs[0] != kInvalidIndex) && (propIdxs[1] != kInvalidIndex) && (propIdxs[2] != kInvalidIndex);
+  }
+
+
+  bool PLYReader::find_indices(uint32_t propIdxs[1]) const
+  {
+    propIdxs[0] = find_property("vertex_indices");
+    return propIdxs[0] != kInvalidIndex;
   }
 
 
@@ -1568,6 +1600,7 @@ namespace miniply {
     std::memcpy(tmp, m_pos, countBytes);
 
     int count = 0;
+    copy_and_convert_to(&count, tmp, prop.countType);
     switch (prop.countType) {
     case PLYPropertyType::Char:
       count = static_cast<int>(*reinterpret_cast<int8_t*>(tmp));
@@ -1704,12 +1737,12 @@ namespace miniply {
     size_t back = prop.listData.size();
     prop.rowStart.push_back(static_cast<uint32_t>(back));
     prop.rowCount.push_back(static_cast<uint32_t>(count));
-    prop.listData.resize(back + numBytes * size_t(count));
+    prop.listData.resize(back + numBytes);
     std::memcpy(prop.listData.data() + back, m_pos, numBytes);
 
     const uint8_t* listEnd = prop.listData.data() + prop.listData.size();
     uint8_t* listPos = prop.listData.data() + back;
-    switch (numBytes) {
+    switch (kPLYPropertySize[uint32_t(prop.type)]) {
     case 2:
       for (; listPos < listEnd; listPos += numBytes) {
         endian_swap_2(listPos);
