@@ -105,7 +105,7 @@ static TriMesh* parse_file_with_miniply(const char* filename)
   bool gotVerts = false;
   bool gotFaces = false;
   while (reader.has_element() && (!gotVerts || !gotFaces)) {
-    if (!gotVerts && reader.element_is("vertex")) {
+    if (!gotVerts && reader.element_is(miniply::kPLYVertexElement)) {
       if (!reader.load_element()) {
         break;
       }
@@ -126,7 +126,7 @@ static TriMesh* parse_file_with_miniply(const char* filename)
       }
       gotVerts = true;
     }
-    else if (!gotFaces && reader.element_is("face")) {
+    else if (!gotFaces && reader.element_is(miniply::kPLYFaceElement)) {
       if (!reader.load_element()) {
         break;
       }

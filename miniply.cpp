@@ -40,6 +40,15 @@ SOFTWARE.
 namespace miniply {
 
   //
+  // Public constants
+  //
+
+  // Standard PLY element names
+  const char* kPLYVertexElement = "vertex";
+  const char* kPLYFaceElement = "face";
+
+
+  //
   // PLY constants
   //
 
@@ -82,7 +91,6 @@ namespace miniply {
   static constexpr double kDoubleDigits[10] = { 0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0 };
 
   static constexpr float kPi = 3.14159265358979323846f;
-
 
 
   //

@@ -44,6 +44,10 @@ namespace miniply {
 
   static constexpr uint32_t kInvalidIndex = 0xFFFFFFFFu;
 
+  // Standard PLY element names
+  extern const char* kPLYVertexElement; // "vertex"
+  extern const char* kPLYFaceElement;   // "face"
+
 
   //
   // PLY Parsing types
@@ -54,6 +58,7 @@ namespace miniply {
     Binary,
     BinaryBigEndian,
   };
+
 
   enum class PLYPropertyType {
     Char,
@@ -67,6 +72,7 @@ namespace miniply {
 
     None, //!< Special value used in Element::listCountType to indicate a non-list property.
   };
+
 
   struct PLYProperty {
     std::string name;
