@@ -82,6 +82,15 @@ struct TriMesh {
     delete[] uv;
     delete[] indices;
   }
+
+  bool all_indices_valid() const {
+    for (uint32_t i = 0; i < numIndices; i++) {
+      if (indices[i] < 0 || uint32_t(indices[i]) >= numVerts) {
+        return false;
+      }
+    }
+    return true;
+  }
 };
 
 
@@ -145,7 +154,7 @@ static TriMesh* parse_file_with_miniply(const char* filename)
     reader.next_element();
   }
 
-  if (!gotVerts || !gotFaces) {
+  if (!gotVerts || !gotFaces || !trimesh->all_indices_valid()) {
     delete trimesh;
     return nullptr;
   }
