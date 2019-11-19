@@ -31,6 +31,10 @@ SOFTWARE.
 
 /// miniply - A simple and fast parser for PLY files
 /// ================================================
+///
+/// For details about the PLY format see:
+/// * http://paulbourke.net/dataformats/ply/
+/// * https://en.wikipedia.org/wiki/PLY_(file_format)
 
 namespace miniply {
 

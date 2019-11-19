@@ -354,37 +354,65 @@ namespace miniply {
   }
 
 
-  static void endian_swap_2(uint8_t* data)
+  static inline void endian_swap_2(uint8_t* data)
   {
-    uint8_t tmp = data[0];
-    data[0] = data[1];
-    data[1] = tmp;
+    uint16_t tmp = *reinterpret_cast<uint16_t*>(data);
+    tmp = static_cast<uint16_t>((tmp >> 8) | (tmp << 8));
+    *reinterpret_cast<uint16_t*>(data) = tmp;
   }
 
 
-  static void endian_swap_4(uint8_t* data)
+  static inline void endian_swap_4(uint8_t* data)
   {
-    uint8_t tmp = data[0];
-    data[0] = data[3];
-    data[3] = tmp;
-    tmp = data[1];
-    data[1] = data[2];
-    data[2] = tmp;
+    uint32_t tmp = *reinterpret_cast<uint32_t*>(data);
+    tmp = (tmp >> 16) | (tmp << 16);
+    tmp = ((tmp & 0xFF00FF00) >> 8) | ((tmp & 0x00FF00FF) << 8);
+    *reinterpret_cast<uint32_t*>(data) = tmp;
   }
 
 
-  static void endian_swap_8(uint8_t* data)
+  static inline void endian_swap_8(uint8_t* data)
   {
-    uint8_t tmp[8];
-    data[0] = tmp[7];
-    data[1] = tmp[6];
-    data[2] = tmp[5];
-    data[3] = tmp[4];
-    data[4] = tmp[3];
-    data[5] = tmp[2];
-    data[6] = tmp[1];
-    data[7] = tmp[0];
-    std::memcpy(data, tmp, 8);
+    uint64_t tmp = *reinterpret_cast<uint64_t*>(data);
+    tmp = (tmp >> 32) | (tmp << 32);
+    tmp = ((tmp & 0xFFFF0000FFFF0000) >> 16) | ((tmp & 0x0000FFFF0000FFFF) << 16);
+    tmp = ((tmp & 0xFF00FF00FF00FF00) >> 8) | ((tmp & 0x00FF00FF00FF00FF) << 8);
+    *reinterpret_cast<uint64_t*>(data) = tmp;
+  }
+
+
+  static inline void endian_swap(uint8_t* data, PLYPropertyType type)
+  {
+    switch (kPLYPropertySize[uint32_t(type)]) {
+    case 2: endian_swap_2(data); break;
+    case 4: endian_swap_4(data); break;
+    case 8: endian_swap_8(data); break;
+    default: break;
+    }
+  }
+
+
+  static inline void endian_swap_array(uint8_t* data, PLYPropertyType type, int n)
+  {
+    switch (kPLYPropertySize[uint32_t(type)]) {
+    case 2:
+      for (const uint8_t* end = data + 2 * n; data < end; data += 2) {
+        endian_swap_2(data);
+      }
+      break;
+    case 4:
+      for (const uint8_t* end = data + 4 * n; data < end; data += 4) {
+        endian_swap_4(data);
+      }
+      break;
+    case 8:
+      for (const uint8_t* end = data + 8 * n; data < end; data += 8) {
+        endian_swap_8(data);
+      }
+      break;
+    default:
+      break;
+    }
   }
 
 
@@ -407,10 +435,6 @@ namespace miniply {
 
   static void copy_and_convert(uint8_t* dest, PLYPropertyType destType, const uint8_t* src, PLYPropertyType srcType)
   {
-    if (destType == srcType) {
-      std::memcpy(dest, src, kPLYPropertySize[uint32_t(destType)]);
-      return;
-    }
     switch (destType) {
     case PLYPropertyType::Char:   copy_and_convert_to(reinterpret_cast<int8_t*>  (dest), src, srcType); break;
     case PLYPropertyType::UChar:  copy_and_convert_to(reinterpret_cast<uint8_t*> (dest), src, srcType); break;
@@ -606,29 +630,7 @@ namespace miniply {
           }
 
           int count = 0;
-          switch (prop.countType) {
-          case PLYPropertyType::Char:
-            count = static_cast<int>(*reinterpret_cast<const int8_t*>(m_pos));
-            break;
-          case PLYPropertyType::UChar:
-            count = static_cast<int>(*reinterpret_cast<const uint8_t*>(m_pos));
-            break;
-          case PLYPropertyType::Short:
-            count = static_cast<int>(*reinterpret_cast<const int16_t*>(m_pos));
-            break;
-          case PLYPropertyType::UShort:
-            count = static_cast<int>(*reinterpret_cast<const uint16_t*>(m_pos));
-            break;
-          case PLYPropertyType::Int:
-            count = *reinterpret_cast<const int*>(m_pos);
-            break;
-          case PLYPropertyType::UInt:
-            count = static_cast<int>(*reinterpret_cast<const uint32_t*>(m_pos));
-            break;
-          default:
-            m_valid = false;
-            return;
-          }
+          copy_and_convert_to(&count, reinterpret_cast<const uint8_t*>(m_pos), prop.countType);
 
           if (count < 0) {
             m_valid = false;
@@ -671,46 +673,11 @@ namespace miniply {
             }
           }
 
+          int count = 0;
           uint8_t tmp[8];
           memcpy(tmp, m_pos, numBytes);
-          switch (numBytes) {
-          case 2:
-            endian_swap_2(tmp);
-            break;
-          case 4:
-            endian_swap_4(tmp);
-            break;
-          case 8:
-            endian_swap_8(tmp);
-            break;
-          default:
-            break;
-          }
-
-          int count = 0;
-          switch (prop.countType) {
-          case PLYPropertyType::Char:
-            count = static_cast<int>(*reinterpret_cast<const int8_t*>(tmp));
-            break;
-          case PLYPropertyType::UChar:
-            count = static_cast<int>(*reinterpret_cast<const uint8_t*>(tmp));
-            break;
-          case PLYPropertyType::Short:
-            count = static_cast<int>(*reinterpret_cast<const int16_t*>(tmp));
-            break;
-          case PLYPropertyType::UShort:
-            count = static_cast<int>(*reinterpret_cast<const uint16_t*>(tmp));
-            break;
-          case PLYPropertyType::Int:
-            count = *reinterpret_cast<const int*>(tmp);
-            break;
-          case PLYPropertyType::UInt:
-            count = static_cast<int>(*reinterpret_cast<const uint32_t*>(tmp));
-            break;
-          default:
-            m_valid = false;
-            return;
-          }
+          endian_swap(tmp, prop.countType);
+          copy_and_convert_to(&count, tmp, prop.countType);
 
           if (count < 0) {
             m_valid = false;
@@ -1587,34 +1554,8 @@ namespace miniply {
       }
     }
 
-    uint8_t tmp[8];
-    std::memcpy(tmp, m_pos, countBytes);
-
     int count = 0;
-    copy_and_convert_to(&count, tmp, prop.countType);
-    switch (prop.countType) {
-    case PLYPropertyType::Char:
-      count = static_cast<int>(*reinterpret_cast<int8_t*>(tmp));
-      break;
-    case PLYPropertyType::UChar:
-      count = static_cast<int>(*reinterpret_cast<uint8_t*>(tmp));
-      break;
-    case PLYPropertyType::Short:
-      count = static_cast<int>(*reinterpret_cast<int16_t*>(tmp));
-      break;
-    case PLYPropertyType::UShort:
-      count = static_cast<int>(*reinterpret_cast<uint16_t*>(tmp));
-      break;
-    case PLYPropertyType::Int:
-      count = *reinterpret_cast<int*>(tmp);
-      break;
-    case PLYPropertyType::UInt:
-      count = static_cast<int>(*reinterpret_cast<uint32_t*>(tmp));
-      break;
-    default:
-      m_valid = false;
-      return false;
-    }
+    copy_and_convert_to(&count, reinterpret_cast<const uint8_t*>(m_pos), prop.countType);
 
     if (count < 0) {
       m_valid = false;
@@ -1624,9 +1565,9 @@ namespace miniply {
     m_pos += countBytes;
     m_end = m_pos;
 
-    const size_t numBytes = kPLYPropertySize[uint32_t(prop.type)] * uint32_t(count);
-    if (m_pos + numBytes > m_bufEnd) {
-      if (!refill_buffer() || m_pos + numBytes > m_bufEnd) {
+    const size_t listBytes = kPLYPropertySize[uint32_t(prop.type)] * uint32_t(count);
+    if (m_pos + listBytes > m_bufEnd) {
+      if (!refill_buffer() || m_pos + listBytes > m_bufEnd) {
         m_valid = false;
         return false;
       }
@@ -1634,10 +1575,10 @@ namespace miniply {
     size_t back = prop.listData.size();
     prop.rowStart.push_back(static_cast<uint32_t>(back));
     prop.rowCount.push_back(static_cast<uint32_t>(count));
-    prop.listData.resize(back + numBytes);
-    std::memcpy(prop.listData.data() + back, m_pos, numBytes);
+    prop.listData.resize(back + listBytes);
+    std::memcpy(prop.listData.data() + back, m_pos, listBytes);
 
-    m_pos += numBytes;
+    m_pos += listBytes;
     m_end = m_pos;
     return true;
   }
@@ -1647,19 +1588,7 @@ namespace miniply {
   {
     size_t startIndex = destIndex;
     if (load_binary_scalar_property(prop, destIndex)) {
-      switch (kPLYPropertySize[uint32_t(prop.type)]) {
-      case 2:
-        endian_swap_2(m_elementData.data() + startIndex);
-        break;
-      case 4:
-        endian_swap_4(m_elementData.data() + startIndex);
-        break;
-      case 8:
-        endian_swap_8(m_elementData.data() + startIndex);
-        break;
-      default:
-        break;
-      }
+      endian_swap(m_elementData.data() + startIndex, prop.type);
       return true;
     }
     else {
@@ -1678,37 +1607,11 @@ namespace miniply {
       }
     }
 
+    int count = 0;
     uint8_t tmp[8];
     std::memcpy(tmp, m_pos, countBytes);
-
-    int count = 0;
-    switch (prop.countType) {
-    case PLYPropertyType::Char:
-      count = static_cast<int>(*reinterpret_cast<int8_t*>(tmp));
-      break;
-    case PLYPropertyType::UChar:
-      count = static_cast<int>(*reinterpret_cast<uint8_t*>(tmp));
-      break;
-    case PLYPropertyType::Short:
-      endian_swap_2(tmp);
-      count = static_cast<int>(*reinterpret_cast<int16_t*>(tmp));
-      break;
-    case PLYPropertyType::UShort:
-      endian_swap_2(tmp);
-      count = static_cast<int>(*reinterpret_cast<uint16_t*>(tmp));
-      break;
-    case PLYPropertyType::Int:
-      endian_swap_4(tmp);
-      count = *reinterpret_cast<int*>(tmp);
-      break;
-    case PLYPropertyType::UInt:
-      endian_swap_4(tmp);
-      count = static_cast<int>(*reinterpret_cast<uint32_t*>(tmp));
-      break;
-    default:
-      m_valid = false;
-      return false;
-    }
+    endian_swap(tmp, prop.countType);
+    copy_and_convert_to(&count, tmp, prop.countType);
 
     if (count < 0) {
       m_valid = false;
@@ -1718,9 +1621,10 @@ namespace miniply {
     m_pos += countBytes;
     m_end = m_pos;
 
-    const size_t numBytes = kPLYPropertySize[uint32_t(prop.type)] * uint32_t(count);
-    if (m_pos + numBytes > m_bufEnd) {
-      if (!refill_buffer() || m_pos + numBytes > m_bufEnd) {
+    const size_t typeBytes = kPLYPropertySize[uint32_t(prop.type)];
+    const size_t listBytes = typeBytes * uint32_t(count);
+    if (m_pos + listBytes > m_bufEnd) {
+      if (!refill_buffer() || m_pos + listBytes > m_bufEnd) {
         m_valid = false;
         return false;
       }
@@ -1728,32 +1632,13 @@ namespace miniply {
     size_t back = prop.listData.size();
     prop.rowStart.push_back(static_cast<uint32_t>(back));
     prop.rowCount.push_back(static_cast<uint32_t>(count));
-    prop.listData.resize(back + numBytes);
-    std::memcpy(prop.listData.data() + back, m_pos, numBytes);
+    prop.listData.resize(back + listBytes);
 
-    const uint8_t* listEnd = prop.listData.data() + prop.listData.size();
-    uint8_t* listPos = prop.listData.data() + back;
-    switch (kPLYPropertySize[uint32_t(prop.type)]) {
-    case 2:
-      for (; listPos < listEnd; listPos += numBytes) {
-        endian_swap_2(listPos);
-      }
-      break;
-    case 4:
-      for (; listPos < listEnd; listPos += numBytes) {
-        endian_swap_4(listPos);
-      }
-      break;
-    case 8:
-      for (; listPos < listEnd; listPos += numBytes) {
-        endian_swap_8(listPos);
-      }
-      break;
-    default:
-      break;
-    }
+    uint8_t* list = prop.listData.data() + back;
+    std::memcpy(list, m_pos, listBytes);
+    endian_swap_array(list, prop.type, count);
 
-    m_pos += numBytes;
+    m_pos += listBytes;
     m_end = m_pos;
     return true;
   }
