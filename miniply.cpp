@@ -1805,4 +1805,4 @@ namespace miniply {
     return n - 2;
   }
 
-} // namespace minipbrt
+} // namespace miniply

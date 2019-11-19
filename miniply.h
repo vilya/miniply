@@ -244,4 +244,4 @@ namespace miniply {
   /// The return value is the number of triangles.
   uint32_t triangulate_polygon(uint32_t n, const float pos[], uint32_t numVerts, const int indices[], int dst[]);
 
-} // namespace minipbrt
+} // namespace miniply
