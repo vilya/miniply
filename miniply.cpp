@@ -27,6 +27,7 @@ SOFTWARE.
 #include <cassert>
 #include <cctype>
 #include <cmath>
+#include <cstdarg>
 #include <cstdio>
 #include <cstring>
 #include <string>
@@ -750,6 +751,23 @@ namespace miniply {
   }
 
 
+  bool PLYReader::find_properties(uint32_t propIdxs[], uint32_t numIdxs, ...) const
+  {
+    bool foundAll = true;
+    va_list args;
+    va_start(args, numIdxs);
+    for (uint32_t i = 0; i < numIdxs; i++) {
+      propIdxs[i] = find_property(va_arg(args, const char*));
+      if (propIdxs[i] == kInvalidIndex) {
+        foundAll = false;
+        break;
+      }
+    }
+    va_end(args);
+    return foundAll;
+  }
+
+
   bool PLYReader::extract_columns(const uint32_t propIdxs[], uint32_t numProps, PLYPropertyType destType, void *dest) const
   {
     if (numProps == 0) {
@@ -1050,61 +1068,34 @@ namespace miniply {
 
   bool PLYReader::find_pos(uint32_t propIdxs[3]) const
   {
-    propIdxs[0] = find_property("x");
-    propIdxs[1] = find_property("y");
-    propIdxs[2] = find_property("z");
-    return (propIdxs[0] != kInvalidIndex) && (propIdxs[1] != kInvalidIndex) && (propIdxs[2] != kInvalidIndex);
+    return find_properties(propIdxs, 3, "x", "y", "z");
   }
 
 
   bool PLYReader::find_normal(uint32_t propIdxs[3]) const
   {
-    propIdxs[0] = find_property("nx");
-    propIdxs[1] = find_property("ny");
-    propIdxs[2] = find_property("nz");
-    return (propIdxs[0] != kInvalidIndex) && (propIdxs[1] != kInvalidIndex) && (propIdxs[2] != kInvalidIndex);
+    return find_properties(propIdxs, 3, "nx", "ny", "nz");
   }
 
 
   bool PLYReader::find_texcoord(uint32_t propIdxs[2]) const
   {
-    propIdxs[0] = find_property("u");
-    propIdxs[1] = find_property("v");
-    if (propIdxs[0] != kInvalidIndex && propIdxs[1] != kInvalidIndex) {
-      return true;
-    }
-    propIdxs[0] = find_property("s");
-    propIdxs[1] = find_property("t");
-    if (propIdxs[0] != kInvalidIndex && propIdxs[1] != kInvalidIndex) {
-      return true;
-    }
-    propIdxs[0] = find_property("texture_u");
-    propIdxs[1] = find_property("texture_v");
-    if (propIdxs[0] != kInvalidIndex && propIdxs[1] != kInvalidIndex) {
-      return true;
-    }
-    propIdxs[0] = find_property("texture_s");
-    propIdxs[1] = find_property("texture_t");
-    if (propIdxs[0] != kInvalidIndex && propIdxs[1] != kInvalidIndex) {
-      return true;
-    }
-    return false;
+    return find_properties(propIdxs, 2, "u", "v") ||
+           find_properties(propIdxs, 2, "s", "t") ||
+           find_properties(propIdxs, 2, "texture_u", "texture_v") ||
+           find_properties(propIdxs, 2, "texture_s", "texture_t");
   }
 
 
   bool PLYReader::find_color(uint32_t propIdxs[3]) const
   {
-    propIdxs[0] = find_property("r");
-    propIdxs[1] = find_property("g");
-    propIdxs[2] = find_property("b");
-    return (propIdxs[0] != kInvalidIndex) && (propIdxs[1] != kInvalidIndex) && (propIdxs[2] != kInvalidIndex);
+    return find_properties(propIdxs, 3, "r", "g", "b");
   }
 
 
   bool PLYReader::find_indices(uint32_t propIdxs[1]) const
   {
-    propIdxs[0] = find_property("vertex_indices");
-    return propIdxs[0] != kInvalidIndex;
+    return find_properties(propIdxs, 1, "vertex_indices");
   }
 
 

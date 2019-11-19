@@ -109,6 +109,20 @@ namespace miniply {
     /// `kInvalidIndex` if it can't be found.
     uint32_t find_property(const char* name) const;
 
+    /// Return the indices for several properties in one go. Use it like this:
+    /// ```
+    /// uint32_t indexes[3];
+    /// if (find_properties(indexes, 3, "foo", "bar", "baz")) { ... }
+    /// ```
+    /// `propIdxs` is where the property indexes will be stored. `numIdxs` is
+    /// the number of properties we will look up. There must be exactly
+    /// `numIdxs` parameters after `numIdxs`; each of the is a c-style string
+    /// giving the name of a property.
+    ///
+    /// The return value will be true if all properties were found. If it was
+    /// not true, you should not use any values from propIdxs.
+    bool find_properties(uint32_t propIdxs[], uint32_t numIdxs, ...) const;
+
     /// Copy the data for the specified columns into `dest`, which must be an
     /// array with at least enough space to hold all of the extracted column
     /// data. `propIdxs` is an array containing the indexes of the properties
