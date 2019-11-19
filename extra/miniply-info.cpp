@@ -22,17 +22,24 @@ static const char* kPropertyTypes[] = {
   "double",
 };
 
-int main(int argc, char** argv)
-{
-  if (argc != 2) {
-    fprintf(stderr, "Usage: %s <ply-file>\n", argv[0]);
-    return EXIT_FAILURE;
-  }
 
-  miniply::PLYReader reader(argv[1]);
+static bool has_extension(const char* filename, const char* ext)
+{
+  int j = int(strlen(ext));
+  int i = int(strlen(filename)) - j;
+  if (i <= 0 || filename[i - 1] != '.') {
+    return false;
+  }
+  return strcmp(filename + i, ext) == 0;
+}
+
+
+bool print_ply_header(const char* filename)
+{
+  miniply::PLYReader reader(filename);
   if (!reader.valid()) {
-    fprintf(stderr, "Failed to open %s\n", argv[1]);
-    return EXIT_FAILURE;
+    fprintf(stderr, "Failed to open %s\n", filename);
+    return false;
   }
 
   printf("ply\n");
@@ -51,5 +58,53 @@ int main(int argc, char** argv)
   }
   printf("end_header\n");
 
-  return EXIT_SUCCESS;
+  return true;
+}
+
+
+int main(int argc, char** argv)
+{
+  const int kFilenameBufferLen = 16 * 1024 - 1;
+  char* filenameBuffer = new char[kFilenameBufferLen + 1];
+  filenameBuffer[kFilenameBufferLen] = '\0';
+
+  std::vector<std::string> filenames;
+  for (int i = 1; i < argc; i++) {
+    if (has_extension(argv[i], "txt")) {
+      FILE* f = fopen(argv[i], "r");
+      if (f != nullptr) {
+        while (fgets(filenameBuffer, kFilenameBufferLen, f)) {
+          filenames.push_back(filenameBuffer);
+          while (filenames.back().back() == '\n') {
+            filenames.back().pop_back();
+          }
+        }
+        fclose(f);
+      }
+      else {
+        fprintf(stderr, "Failed to open %s\n", argv[i]);
+      }
+    }
+    else {
+      filenames.push_back(argv[i]);
+    }
+  }
+
+  if (filenames.empty()) {
+    fprintf(stderr, "No input files provided.\n");
+    return EXIT_SUCCESS;
+  }
+  else if (filenames.size() == 1) {
+    return print_ply_header(filenames[0].c_str()) ? EXIT_SUCCESS : EXIT_FAILURE;
+  }
+
+  bool anyFailed = false;
+  for (const std::string& filename : filenames) {
+    printf("---- %s ----\n", filename.c_str());
+    if (!print_ply_header(filename.c_str())) {
+      anyFailed = true;
+    }
+    printf("\n");
+  }
+  return anyFailed ? EXIT_FAILURE : EXIT_SUCCESS;
 }
