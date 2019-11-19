@@ -700,6 +700,48 @@ namespace miniply {
   }
 
 
+  PLYFileType PLYReader::file_type() const
+  {
+    return m_fileType;
+  }
+
+
+  int PLYReader::version_major() const
+  {
+    return m_majorVersion;
+  }
+
+
+  int PLYReader::version_minor() const
+  {
+    return m_minorVersion;
+  }
+
+
+  uint32_t PLYReader::num_elements() const
+  {
+    return m_valid ? static_cast<uint32_t>(m_elements.size()) : 0;
+  }
+
+
+  uint32_t PLYReader::find_element(const char* name) const
+  {
+    for (uint32_t i = 0, endI = num_elements(); i < endI; i++) {
+      const PLYElement& elem = m_elements[i];
+      if (strcmp(elem.name.c_str(), name) == 0) {
+        return i;
+      }
+    }
+    return kInvalidIndex;
+  }
+
+
+  const PLYElement* PLYReader::get_element(uint32_t idx) const
+  {
+    return (idx < num_elements()) ? &m_elements[idx] : nullptr;
+  }
+
+
   bool PLYReader::element_is(const char* name) const
   {
     return has_element() && strcmp(element()->name.c_str(), name) == 0;

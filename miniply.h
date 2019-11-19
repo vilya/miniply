@@ -103,6 +103,13 @@ namespace miniply {
     bool load_element();
     void next_element();
 
+    PLYFileType file_type() const;
+    int version_major() const;
+    int version_minor() const;
+    uint32_t num_elements() const;
+    uint32_t find_element(const char* name) const;
+    const PLYElement* get_element(uint32_t idx) const;
+
     /// Check whether the current element has the given name.
     bool element_is(const char* name) const;
 
