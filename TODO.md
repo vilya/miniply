@@ -9,4 +9,10 @@ read the vertex data yet:
 
 Flesh out the API docs.
 
+Set up continuous integration 
+- Github Actions?
+- Travis?
+
 Automated tests to ensure we can parse all file and data types correctly.
+
+Option to generate graphs of the miniply-perf results as SVG files. 
