@@ -457,6 +457,13 @@ namespace miniply {
   }
 
 
+  static inline bool compatible_types(PLYPropertyType srcType, PLYPropertyType destType)
+  {
+    return (srcType == destType) ||
+        (srcType < PLYPropertyType::Float && (uint32_t(srcType) ^ 0x1) == uint32_t(destType));
+  }
+
+
   //
   // PLYElement methods
   //
@@ -847,7 +854,7 @@ namespace miniply {
     for (uint32_t i = 0; i < numProps; i++) {
       uint32_t propIdx = propIdxs[i];
       const PLYProperty& prop = elem->properties[propIdx];
-      if (prop.type != destType) {
+      if (!compatible_types(prop.type, destType)) {
         conversionRequired = true;
         break;
       }
@@ -949,7 +956,7 @@ namespace miniply {
     }
 
     const PLYProperty& prop = element()->properties[propIdx];
-    if (destType == prop.type) {
+    if (compatible_types(prop.type, destType)) {
       // If no type conversion is required, we can just copy the list data
       // directly over with a single memcpy.
       std::memcpy(dest, prop.listData.data(), prop.listData.size());
@@ -1022,14 +1029,8 @@ namespace miniply {
 
     uint8_t* to = reinterpret_cast<uint8_t*>(dest);
 
-    bool convertSrc = elem->properties[propIdx].type != PLYPropertyType::Int;
-    bool convertDst = destType != PLYPropertyType::Int;
-
-    std::vector<int> faceIndices;
-    faceIndices.reserve(32);
-
-    std::vector<int> triIndices;
-    triIndices.reserve(64);
+    bool convertSrc = !compatible_types(elem->properties[propIdx].type, PLYPropertyType::Int);
+    bool convertDst = !compatible_types(PLYPropertyType::Int, destType);
 
     size_t srcValBytes  = kPLYPropertySize[uint32_t(prop.type)];
     size_t destValBytes = kPLYPropertySize[uint32_t(destType)];
