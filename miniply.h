@@ -82,7 +82,6 @@ namespace miniply {
     uint32_t stride           = 0;
 
     std::vector<uint8_t> listData;
-    std::vector<uint32_t> rowStart; // Entry `i` is the index in listData at which the data for row i starts.
     std::vector<uint32_t> rowCount; // Entry `i` is the number of items (*not* the number of bytes) in row `i`.
   };
 
@@ -176,7 +175,6 @@ namespace miniply {
     /// array is the number of items in the `i`th list.
     const uint32_t* get_list_counts(uint32_t propIdx) const;
 
-    const uint32_t* get_list_start_offsets(uint32_t propIdx) const;
     const uint8_t* get_list_data(uint32_t propIdx) const;
     bool extract_list_property(uint32_t propIdx, PLYPropertyType destType, void* dest) const;
 

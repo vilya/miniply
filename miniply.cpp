@@ -606,8 +606,6 @@ namespace miniply {
         prop.listData.shrink_to_fit();
         prop.rowCount.clear();
         prop.rowCount.shrink_to_fit();
-        prop.rowStart.clear();
-        prop.rowStart.shrink_to_fit();
       }
 
       // Clear temporary storage for the non-list properties in the current element.
@@ -931,15 +929,6 @@ namespace miniply {
   }
 
 
-  const uint32_t* PLYReader::get_list_start_offsets(uint32_t propIdx) const
-  {
-    if (!has_element() || propIdx >= element()->properties.size() || element()->properties[propIdx].countType == PLYPropertyType::None) {
-      return nullptr;
-    }
-    return element()->properties[propIdx].rowStart.data();
-  }
-
-
   const uint8_t* PLYReader::get_list_data(uint32_t propIdx) const
   {
     if (!has_element() || propIdx >= element()->properties.size() || element()->properties[propIdx].countType == PLYPropertyType::None) {
@@ -1024,7 +1013,6 @@ namespace miniply {
     const PLYProperty& prop = elem->properties[propIdx];
 
     const uint32_t* counts = prop.rowCount.data();
-    const uint32_t* starts = prop.rowStart.data();
     const uint8_t*  data   = prop.listData.data();
 
     uint8_t* to = reinterpret_cast<uint8_t*>(dest);
@@ -1039,8 +1027,8 @@ namespace miniply {
       std::vector<int> faceIndices, triIndices;
       faceIndices.reserve(32);
       triIndices.reserve(64);
+      const uint8_t* face = data;
       for (uint32_t faceIdx = 0; faceIdx < elem->count; faceIdx++) {
-        const uint8_t* face = data + starts[faceIdx];
         const uint8_t* faceEnd = face + srcValBytes * counts[faceIdx];
         faceIndices.clear();
         faceIndices.reserve(counts[faceIdx]);
@@ -1061,8 +1049,8 @@ namespace miniply {
     else if (convertSrc) {
       std::vector<int> faceIndices;
       faceIndices.reserve(32);
+      const uint8_t* face = data;
       for (uint32_t faceIdx = 0; faceIdx < elem->count; faceIdx++) {
-        const uint8_t* face = data + starts[faceIdx];
         const uint8_t* faceEnd = face + srcValBytes * counts[faceIdx];
         faceIndices.clear();
         faceIndices.reserve(counts[faceIdx]);
@@ -1079,21 +1067,22 @@ namespace miniply {
     else if (convertDst) {
       std::vector<int> triIndices;
       triIndices.reserve(64);
+      const uint8_t* face = data;
       for (uint32_t faceIdx = 0; faceIdx < elem->count; faceIdx++) {
-        const uint8_t* face = data + starts[faceIdx];
-
         triIndices.resize((counts[faceIdx] - 2) * 3);
         triangulate_polygon(counts[faceIdx], pos, numVerts, reinterpret_cast<const int*>(face), triIndices.data());
         for (int idx : triIndices) {
           copy_and_convert(to, destType, reinterpret_cast<const uint8_t*>(&idx), PLYPropertyType::Int);
           to += destValBytes;
         }
+        face += srcValBytes * counts[faceIdx];
       }
     }
     else {
+      const uint8_t* face = data;
       for (uint32_t faceIdx = 0; faceIdx < elem->count; faceIdx++) {
-        const uint8_t* face = data + starts[faceIdx];
         uint32_t numTris = triangulate_polygon(counts[faceIdx], pos, numVerts, reinterpret_cast<const int*>(face), reinterpret_cast<int*>(to));
+        face += counts[faceIdx] * srcValBytes;
         to += numTris * 3 * destValBytes;
       }
     }
@@ -1580,7 +1569,6 @@ namespace miniply {
     const size_t numBytes = kPLYPropertySize[uint32_t(prop.type)];
 
     size_t back = prop.listData.size();
-    prop.rowStart.push_back(static_cast<uint32_t>(back));
     prop.rowCount.push_back(static_cast<uint32_t>(count));
     prop.listData.resize(back + numBytes * size_t(count));
 
@@ -1642,7 +1630,6 @@ namespace miniply {
       }
     }
     size_t back = prop.listData.size();
-    prop.rowStart.push_back(static_cast<uint32_t>(back));
     prop.rowCount.push_back(static_cast<uint32_t>(count));
     prop.listData.resize(back + listBytes);
     std::memcpy(prop.listData.data() + back, m_pos, listBytes);
@@ -1699,7 +1686,6 @@ namespace miniply {
       }
     }
     size_t back = prop.listData.size();
-    prop.rowStart.push_back(static_cast<uint32_t>(back));
     prop.rowCount.push_back(static_cast<uint32_t>(count));
     prop.listData.resize(back + listBytes);
 
