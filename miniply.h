@@ -94,7 +94,28 @@ namespace miniply {
     bool                     fixedSize  = true;    //!< `true` if there are only fixed-size properties in this element, i.e. no list properties.
     uint32_t                 rowStride  = 0;
 
+    /// Returns the index for the named property in this element, or `kInvalidIndex`
+    /// if it can't be found.
     uint32_t find_property(const char* propName) const;
+
+    /// Return the indices for several properties in one go. Use it like this:
+    /// ```
+    /// uint32_t indexes[3];
+    /// if (elem.find_properties(indexes, 3, "foo", "bar", "baz")) { ... }
+    /// ```
+    /// `propIdxs` is where the property indexes will be stored. `numIdxs` is
+    /// the number of properties we will look up. There must be exactly
+    /// `numIdxs` parameters after `numIdxs`; each of the is a c-style string
+    /// giving the name of a property.
+    ///
+    /// The return value will be true if all properties were found. If it was
+    /// not true, you should not use any values from propIdxs.
+    bool find_properties(uint32_t propIdxs[], uint32_t numIdxs, ...) const;
+
+    /// Same as `find_properties`, for when you already have a `va_list`. This
+    /// is called internally by both `PLYElement::find_properties` and
+    /// `PLYReader::find_properties`.
+    bool find_properties_va(uint32_t propIdxs[], uint32_t numIdxs, va_list names) const;
   };
 
 
@@ -126,41 +147,30 @@ namespace miniply {
     /// `kInvalidIndex` if it can't be found.
     uint32_t find_property(const char* name) const;
 
-    /// Return the indices for several properties in one go. Use it like this:
-    /// ```
-    /// uint32_t indexes[3];
-    /// if (find_properties(indexes, 3, "foo", "bar", "baz")) { ... }
-    /// ```
-    /// `propIdxs` is where the property indexes will be stored. `numIdxs` is
-    /// the number of properties we will look up. There must be exactly
-    /// `numIdxs` parameters after `numIdxs`; each of the is a c-style string
-    /// giving the name of a property.
-    ///
-    /// The return value will be true if all properties were found. If it was
-    /// not true, you should not use any values from propIdxs.
+    /// Equivalent to calling `find_properties` on the current element.
     bool find_properties(uint32_t propIdxs[], uint32_t numIdxs, ...) const;
 
-    /// Copy the data for the specified columns into `dest`, which must be an
-    /// array with at least enough space to hold all of the extracted column
+    /// Copy the data for the specified properties into `dest`, which must be
+    /// an array with at least enough space to hold all of the extracted column
     /// data. `propIdxs` is an array containing the indexes of the properties
     /// to copy; it has `numProps` elements.
     ///
     /// `destType` specifies the data type for values stored in `dest`. All
-    /// column values will be converted to this type if necessary.
+    /// property values will be converted to this type if necessary.
     ///
     /// This function does some checks up front to pick the most efficient code
     /// path for extracting the data. It considers:
     /// (a) whether any data conversion is required.
-    /// (b) whether all column values to be extracted are contiguous in memory.
-    /// (c) whether the data to be extracted for consecutive rows is contiguous
-    ///     in memory.
+    /// (b) whether all property values to be extracted are in contiguous
+    ///     memory locations for any given item.
+    /// (c) whether the data for all rows is contiguous in memory.
     /// In the best case it reduces to a single memcpy call. In the worst case
     /// we must iterate over all values to be copied, applying type conversions
     /// as we go.
     ///
-    /// Note that this function does not handle list-valued columns. Use
+    /// Note that this function does not handle list-valued properties. Use
     /// `extract_list_column()` for those instead.
-    bool extract_columns(const uint32_t propIdxs[], uint32_t numProps, PLYPropertyType destType, void* dest) const;
+    bool extract_properties(const uint32_t propIdxs[], uint32_t numProps, PLYPropertyType destType, void* dest) const;
 
     /// Get the array of item counts for a list property. Entry `i` in this
     /// array is the number of items in the `i`th list.
@@ -168,7 +178,7 @@ namespace miniply {
 
     const uint32_t* get_list_start_offsets(uint32_t propIdx) const;
     const uint8_t* get_list_data(uint32_t propIdx) const;
-    bool extract_list_column(uint32_t propIdx, PLYPropertyType destType, void* dest) const;
+    bool extract_list_property(uint32_t propIdx, PLYPropertyType destType, void* dest) const;
 
     uint32_t num_triangles(uint32_t propIdx) const;
     bool requires_triangulation(uint32_t propIdx) const;

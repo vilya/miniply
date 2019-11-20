@@ -115,14 +115,14 @@ static TriMesh* parse_file_with_miniply(const char* filename)
       }
       trimesh->numVerts = reader.num_rows();
       trimesh->pos = new float[trimesh->numVerts * 3];
-      reader.extract_columns(propIdxs, 3, miniply::PLYPropertyType::Float, trimesh->pos);
+      reader.extract_properties(propIdxs, 3, miniply::PLYPropertyType::Float, trimesh->pos);
       if (reader.find_normal(propIdxs)) {
         trimesh->normal = new float[trimesh->numVerts * 3];
-        reader.extract_columns(propIdxs, 3, miniply::PLYPropertyType::Float, trimesh->normal);
+        reader.extract_properties(propIdxs, 3, miniply::PLYPropertyType::Float, trimesh->normal);
       }
       if (reader.find_texcoord(propIdxs)) {
         trimesh->uv = new float[trimesh->numVerts * 2];
-        reader.extract_columns(propIdxs, 2, miniply::PLYPropertyType::Float, trimesh->uv);
+        reader.extract_properties(propIdxs, 2, miniply::PLYPropertyType::Float, trimesh->uv);
       }
       gotVerts = true;
     }
@@ -147,7 +147,7 @@ static TriMesh* parse_file_with_miniply(const char* filename)
       else {
         trimesh->numIndices = reader.num_rows() * 3;
         trimesh->indices = new int[trimesh->numIndices];
-        reader.extract_list_column(propIdx, miniply::PLYPropertyType::Int, trimesh->indices);
+        reader.extract_list_property(propIdx, miniply::PLYPropertyType::Int, trimesh->indices);
       }
       gotFaces = true;
     }

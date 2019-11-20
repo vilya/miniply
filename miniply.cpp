@@ -472,6 +472,28 @@ namespace miniply {
   }
 
 
+  bool PLYElement::find_properties(uint32_t propIdxs[], uint32_t numIdxs, ...) const
+  {
+    va_list args;
+    va_start(args, numIdxs);
+    bool foundAll = find_properties_va(propIdxs, numIdxs, args);
+    va_end(args);
+    return foundAll;
+  }
+
+
+  bool PLYElement::find_properties_va(uint32_t propIdxs[], uint32_t numIdxs, va_list names) const
+  {
+    for (uint32_t i = 0; i < numIdxs; i++) {
+      propIdxs[i] = find_property(va_arg(names, const char*));
+      if (propIdxs[i] == kInvalidIndex) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+
   //
   // PLYReader methods
   //
@@ -770,22 +792,18 @@ namespace miniply {
 
   bool PLYReader::find_properties(uint32_t propIdxs[], uint32_t numIdxs, ...) const
   {
-    bool foundAll = true;
+    if (!has_element()) {
+      return false;
+    }
     va_list args;
     va_start(args, numIdxs);
-    for (uint32_t i = 0; i < numIdxs; i++) {
-      propIdxs[i] = find_property(va_arg(args, const char*));
-      if (propIdxs[i] == kInvalidIndex) {
-        foundAll = false;
-        break;
-      }
-    }
+    bool foundAll = element()->find_properties_va(propIdxs, numIdxs, args);
     va_end(args);
     return foundAll;
   }
 
 
-  bool PLYReader::extract_columns(const uint32_t propIdxs[], uint32_t numProps, PLYPropertyType destType, void *dest) const
+  bool PLYReader::extract_properties(const uint32_t propIdxs[], uint32_t numProps, PLYPropertyType destType, void *dest) const
   {
     if (numProps == 0) {
       return false;
@@ -924,7 +942,7 @@ namespace miniply {
   }
 
 
-  bool PLYReader::extract_list_column(uint32_t propIdx, PLYPropertyType destType, void *dest) const
+  bool PLYReader::extract_list_property(uint32_t propIdx, PLYPropertyType destType, void *dest) const
   {
     if (!has_element() || propIdx >= element()->properties.size() || element()->properties[propIdx].countType == PLYPropertyType::None) {
       return false;
@@ -992,7 +1010,7 @@ namespace miniply {
   bool PLYReader::extract_triangles(uint32_t propIdx, const float pos[], uint32_t numVerts, PLYPropertyType destType, void *dest) const
   {
     if (!requires_triangulation(propIdx)) {
-      return extract_list_column(propIdx, destType, dest);
+      return extract_list_property(propIdx, destType, dest);
     }
 
     const PLYElement* elem = element();

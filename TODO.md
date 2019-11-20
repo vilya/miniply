@@ -7,10 +7,6 @@ read the vertex data yet:
 * Allow jumping directly to the start of any element with a known offset.
 * Calculate offsets up to the first non-fixed-size element at startup.
 
-Try out doing the endian swaps when we extract data, instead of when we load
-it.
-* We might avoid a lot of endian swaps that way.
-* On the other hand, we might end up doing more if the same property is read 
-  multiple times.
+Flesh out the API docs.
 
-Add helper methods for checking standard element names.
+Automated tests to ensure we can parse all file and data types correctly.
