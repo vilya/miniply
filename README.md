@@ -191,8 +191,8 @@ For a more complete example, see
 [extra/miniply-perf.cpp](https://github.com/vilya/miniply/blob/master/extra/miniply-perf.cpp)
 
 
-Loading from a PLY file known to only contains triangles
---------------------------------------------------------
+Loading from a PLY file known to only contain triangles
+-------------------------------------------------------
 
 Loading the vertex indices for each face from a variable length list is a bit
 wasteful if you know ahread of time that your PLY file only contains triangles.
@@ -200,7 +200,7 @@ With `miniply` you can take advantage of this knowledge to get a massive
 reduction in the loading time for the file.
 
 The idea is to replace the single list property, which miniply has to treat as
- variable-sized, with a set of fixed-size properties. There will be one
+variable-sized, with a set of fixed-size properties. There will be one
 property corresponding to the item count for each list (which we will ignore
 during  loading, because we know it will always be three), followed by three
 new  properties (one for each list index). You do this by calling 
