@@ -214,8 +214,13 @@ The [ply-parsing-perf](https://github.com/vilya/ply-parsing-perf/) repo has a
 detailed performance comparison between miniply and a number of other ply parsing
 libraries. 
 
-Overall `miniply` is between 2 and 8 times faster than all the other parsers for 
-that test workload (the test creates a simple poly mesh from each ply file).
+Overall `miniply` is between 2 and 8 times faster than all the other parsers I've 
+tested, for that workload (creating a simple poly mesh from each ply file).
+
+*Update:* I've just discovered a PLY library, msh_ply, which is faster than miniply. 
+Quite a bit faster, in fact, especially for larger files like the Lucy model from 
+the Stanford 3D Scan collection. I still have some work to do before I can claim the
+"world's fastest PLY parser" title!
 
 
 Other PLY parsing libraries
