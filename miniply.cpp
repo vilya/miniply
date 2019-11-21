@@ -1242,7 +1242,7 @@ namespace miniply {
       }
       ++m_pos; // move past the newline char
       m_end = m_pos;
-    } while (match("comment"));
+    } while (match("comment") || match("obj_info"));
 
     return true;
   }
