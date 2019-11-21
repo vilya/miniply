@@ -468,6 +468,30 @@ namespace miniply {
   // PLYElement methods
   //
 
+  void PLYElement::calculate_offsets()
+  {
+    fixedSize = true;
+    for (PLYProperty& prop : properties) {
+      if (prop.countType != PLYPropertyType::None) {
+        fixedSize = false;
+        break;
+      }
+    }
+
+    // Note that each list property gets its own separate storage. Only fixed
+    // size properties go into the common data block. The `rowStride` is the
+    // size of a row in the common data block.
+    rowStride = 0;
+    for (PLYProperty& prop : properties) {
+      if (prop.countType != PLYPropertyType::None) {
+        continue;
+      }
+      prop.offset = rowStride;
+      rowStride += kPLYPropertySize[uint32_t(prop.type)];
+    }
+  }
+
+
   uint32_t PLYElement::find_property(const char *propName) const
   {
     for (uint32_t i = 0, endI = uint32_t(properties.size()); i < endI; i++) {
@@ -497,6 +521,51 @@ namespace miniply {
         return false;
       }
     }
+    return true;
+  }
+
+
+  bool PLYElement::convert_list_to_fixed_size(uint32_t listPropIdx, uint32_t listSize, uint32_t newPropIdxs[])
+  {
+    if (fixedSize || listPropIdx >= properties.size() || properties[listPropIdx].countType == PLYPropertyType::None) {
+      return false;
+    }
+
+    PLYProperty oldListProp = properties[listPropIdx];
+    char nameBuf[512];
+
+    // Set up a property for the list count column.
+    PLYProperty& countProp = properties[listPropIdx];
+    snprintf(nameBuf, sizeof(nameBuf), "%s_count", oldListProp.name.c_str());
+    countProp.name = nameBuf;
+    countProp.type = oldListProp.countType;
+    countProp.countType = PLYPropertyType::None;
+    countProp.stride = kPLYPropertySize[uint32_t(oldListProp.countType)];
+
+    if (listSize > 0) {
+      // Set up additional properties for the list entries, 1 per entry.
+      if (listPropIdx + 1 == properties.size()) {
+        properties.resize(properties.size() + listSize);
+      }
+      else {
+        properties.insert(properties.begin() + listPropIdx + 1, listSize, PLYProperty());
+      }
+
+      for (uint32_t i = 0; i < listSize; i++) {
+        uint32_t propIdx = listPropIdx + 1 + i;
+
+        PLYProperty& itemProp = properties[propIdx];
+        snprintf(nameBuf, sizeof(nameBuf), "%s_%u", oldListProp.name.c_str(), i);
+        itemProp.name = nameBuf;
+        itemProp.type = oldListProp.type;
+        itemProp.countType = PLYPropertyType::None;
+        itemProp.stride = kPLYPropertySize[uint32_t(oldListProp.type)];
+
+        newPropIdxs[i] = propIdx;
+      }
+    }
+
+    calculate_offsets();
     return true;
   }
 
@@ -540,7 +609,7 @@ namespace miniply {
     }
 
     for (PLYElement& elem : m_elements) {
-      setup_element(elem);
+      elem.calculate_offsets();
     }
   }
 
@@ -771,7 +840,7 @@ namespace miniply {
   }
 
 
-  const PLYElement* PLYReader::get_element(uint32_t idx) const
+  PLYElement* PLYReader::get_element(uint32_t idx)
   {
     return (idx < num_elements()) ? &m_elements[idx] : nullptr;
   }
@@ -1398,28 +1467,6 @@ namespace miniply {
     prop.countType = countType;
 
     return true;
-  }
-
-
-  void PLYReader::setup_element(PLYElement& elem)
-  {
-    for (PLYProperty& prop : elem.properties) {
-      if (prop.countType != PLYPropertyType::None) {
-        elem.fixedSize = false;
-      }
-    }
-
-    // Note that each list property gets its own separate storage. Only fixed
-    // size properties go into the common data block. The `rowStride` is the
-    // size of a row in the common data block.
-
-    for (PLYProperty& prop : elem.properties) {
-      if (prop.countType != PLYPropertyType::None) {
-        continue;
-      }
-      prop.offset = elem.rowStride;
-      elem.rowStride += kPLYPropertySize[uint32_t(prop.type)];
-    }
   }
 
 

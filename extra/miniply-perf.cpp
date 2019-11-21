@@ -67,13 +67,13 @@ double Timer::elapsedMS() const
 // get triangulated.
 struct TriMesh {
   // Per-vertex data
-  float* pos     = nullptr; // has 3*numVerts elements.
-  float* normal  = nullptr; // if non-null, has 3 * numVerts elements.
-  float* uv      = nullptr; // if non-null, has 2 * numVerts elements.
+  float* pos          = nullptr; // has 3*numVerts elements.
+  float* normal       = nullptr; // if non-null, has 3 * numVerts elements.
+  float* uv           = nullptr; // if non-null, has 2 * numVerts elements.
   uint32_t numVerts   = 0;
 
   // Per-index data
-  int* indices   = nullptr;
+  int* indices        = nullptr; // has numIndices elements.
   uint32_t numIndices = 0; // number of indices = 3 times the number of faces.
 
   ~TriMesh() {
@@ -94,23 +94,29 @@ struct TriMesh {
 };
 
 
-static TriMesh* parse_file_with_miniply(const char* filename)
+static TriMesh* parse_file_with_miniply(const char* filename, bool assumeTriangles)
 {
   miniply::PLYReader reader(filename);
   if (!reader.valid()) {
     return nullptr;
   }
 
+  uint32_t faceIdxs[3];
+  if (assumeTriangles) {
+    miniply::PLYElement* faceElem = reader.get_element(reader.find_element(miniply::kPLYFaceElement));
+    if (faceElem == nullptr) {
+      return nullptr;
+    }
+    assumeTriangles = faceElem->convert_list_to_fixed_size(faceElem->find_property("vertex_indices"), 3, faceIdxs);
+  }
+
+  uint32_t propIdxs[3];
+  bool gotVerts = false, gotFaces = false;
+
   TriMesh* trimesh = new TriMesh();
-  bool gotVerts = false;
-  bool gotFaces = false;
   while (reader.has_element() && (!gotVerts || !gotFaces)) {
-    if (!gotVerts && reader.element_is(miniply::kPLYVertexElement)) {
-      if (!reader.load_element()) {
-        break;
-      }
-      uint32_t propIdxs[3];
-      if (!reader.find_pos(propIdxs)) {
+    if (reader.element_is(miniply::kPLYVertexElement)) {
+      if (!reader.load_element() || !reader.find_pos(propIdxs)) {
         break;
       }
       trimesh->numVerts = reader.num_rows();
@@ -130,24 +136,31 @@ static TriMesh* parse_file_with_miniply(const char* filename)
       if (!reader.load_element()) {
         break;
       }
-      uint32_t propIdx;
-      if (!reader.find_indices(&propIdx)) {
-        break;
-      }
-      bool polys = reader.requires_triangulation(propIdx);
-      if (polys && !gotVerts) {
-        fprintf(stderr, "Error: face data needing triangulation found before vertex data.\n");
-        break;
-      }
-      if (polys) {
-        trimesh->numIndices = reader.num_triangles(propIdx) * 3;
-        trimesh->indices = new int[trimesh->numIndices];
-        reader.extract_triangles(propIdx, trimesh->pos, trimesh->numVerts, miniply::PLYPropertyType::Int, trimesh->indices);
-      }
-      else {
+      if (assumeTriangles) {
         trimesh->numIndices = reader.num_rows() * 3;
         trimesh->indices = new int[trimesh->numIndices];
-        reader.extract_list_property(propIdx, miniply::PLYPropertyType::Int, trimesh->indices);
+        reader.extract_properties(faceIdxs, 3, miniply::PLYPropertyType::Int, trimesh->indices);
+      }
+      else {
+        uint32_t propIdx;
+        if (!reader.find_indices(&propIdx)) {
+          break;
+        }
+        bool polys = reader.requires_triangulation(propIdx);
+        if (polys && !gotVerts) {
+          fprintf(stderr, "Error: face data needing triangulation found before vertex data.\n");
+          break;
+        }
+        if (polys) {
+          trimesh->numIndices = reader.num_triangles(propIdx) * 3;
+          trimesh->indices = new int[trimesh->numIndices];
+          reader.extract_triangles(propIdx, trimesh->pos, trimesh->numVerts, miniply::PLYPropertyType::Int, trimesh->indices);
+        }
+        else {
+          trimesh->numIndices = reader.num_rows() * 3;
+          trimesh->indices = new int[trimesh->numIndices];
+          reader.extract_list_property(propIdx, miniply::PLYPropertyType::Int, trimesh->indices);
+        }
       }
       gotFaces = true;
     }
@@ -180,8 +193,19 @@ int main(int argc, char** argv)
   char* filenameBuffer = new char[kFilenameBufferLen + 1];
   filenameBuffer[kFilenameBufferLen] = '\0';
 
+  bool assumeTriangles = false;
+  for (int i = 1; i < argc; i++) {
+    if (strcmp(argv[i], "--assume-triangles") == 0) {
+      assumeTriangles = true;
+      break;
+    }
+  }
+
   std::vector<std::string> filenames;
   for (int i = 1; i < argc; i++) {
+    if (argv[i][0] == '-') {
+      continue;
+    }
     if (has_extension(argv[i], "txt")) {
       FILE* f = fopen(argv[i], "r");
       if (f != nullptr) {
@@ -221,7 +245,7 @@ int main(int argc, char** argv)
   for (const std::string& filename : filenames) {
     Timer timer(true); // true ==> autostart the timer.
 
-    TriMesh* trimesh = parse_file_with_miniply(filename.c_str());
+    TriMesh* trimesh = parse_file_with_miniply(filename.c_str(), assumeTriangles);
     bool ok = trimesh != nullptr;
 
     timer.stop();

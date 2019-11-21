@@ -87,11 +87,13 @@ namespace miniply {
 
 
   struct PLYElement {
-    std::string              name;                 //!< Name of this element.
+    std::string              name;              //!< Name of this element.
     std::vector<PLYProperty> properties;
-    uint32_t                 count      = 0;       //!< The number of items in this element (e.g. the number of vertices if this is the vertex element).
-    bool                     fixedSize  = true;    //!< `true` if there are only fixed-size properties in this element, i.e. no list properties.
-    uint32_t                 rowStride  = 0;
+    uint32_t                 count      = 0;    //!< The number of items in this element (e.g. the number of vertices if this is the vertex element).
+    bool                     fixedSize  = true; //!< `true` if there are only fixed-size properties in this element, i.e. no list properties.
+    uint32_t                 rowStride  = 0;    //!< The number of bytes from the start of one row to the start of the next, for this element.
+
+    void calculate_offsets();
 
     /// Returns the index for the named property in this element, or `kInvalidIndex`
     /// if it can't be found.
@@ -115,6 +117,27 @@ namespace miniply {
     /// is called internally by both `PLYElement::find_properties` and
     /// `PLYReader::find_properties`.
     bool find_properties_va(uint32_t propIdxs[], uint32_t numIdxs, va_list names) const;
+
+    /// Call this on the element at some point before you load its data, when
+    /// you know that every row's list will have the same length. It will
+    /// replace the single variable-size property with a set of new fixed-size
+    /// properties: one for the list count, followed by one for each of the
+    /// list values. This will allow miniply to load and extract the property
+    /// data a lot more efficiently, giving a big performance increase.
+    ///
+    /// After you've called this, you must use PLYReader's `extract_columns`
+    /// method to get the data, rather than `extract_list_column`.
+    ///
+    /// The `newPropIdxs` parameter must be an array with at least `listSize`
+    /// entries. If the function returns true, this will have been populated
+    /// with the indices of the new properties that represent the list values
+    /// (i.e. not including the list count property, which will have the same
+    /// index as the old list property).
+    ///
+    /// The function returns false if the property index is invalid, or the
+    /// property it refers to is not a list property. In these cases it will
+    /// not modify anything. Otherwise it will return true.
+    bool convert_list_to_fixed_size(uint32_t listPropIdx, uint32_t listSize, uint32_t newPropIdxs[]);
   };
 
 
@@ -134,7 +157,7 @@ namespace miniply {
     int version_minor() const;
     uint32_t num_elements() const;
     uint32_t find_element(const char* name) const;
-    const PLYElement* get_element(uint32_t idx) const;
+    PLYElement* get_element(uint32_t idx);
 
     /// Check whether the current element has the given name.
     bool element_is(const char* name) const;
@@ -212,8 +235,6 @@ namespace miniply {
     bool parse_elements();
     bool parse_element();
     bool parse_property(std::vector<PLYProperty>& properties);
-
-    void setup_element(PLYElement& elem);
 
     bool load_fixed_size_element(PLYElement& elem);
     bool load_variable_size_element(PLYElement& elem);

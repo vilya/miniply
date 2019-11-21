@@ -1,9 +1,9 @@
 miniply - A simple and fast c++11 library for loading PLY files
 ===============================================================
 
-miniply is a small, fast and easy-to-use library for parsing
-[PLY files](http://paulbourke.net/dataformats/ply/), written in c++11. The
-entire parser is a single header and cpp file which you can copy into your own
+miniply is a small, fast and easy-to-use library for parsing [PLY
+files](http://paulbourke.net/dataformats/ply/), written in c++11. The entire
+parser is a single header and cpp file which you can copy into your own
 project.
 
 
@@ -11,14 +11,18 @@ Features
 --------
 
 - *Small*: just a single .h and .cpp file which you can copy into your project.
-* *Fast*: loads all 8929 PLY files from the [pbrt-v3-scenes repository](https://www.pbrt.org/scenes-v3.html)
-  in under 9 seconds total - an average parsing time of less than 1 millisecond per file!
+* *Fast*: loads all 8929 PLY files from the 
+  [pbrt-v3-scenes repository](https://www.pbrt.org/scenes-v3.html)
+  in under 9 seconds total - an average parsing time of less than 1 millisecond
+  per file!
 - *Complete*: parses ASCII, binary little-endian and binary big-endian
   versions of the file format (binary loading assumes you're running on a 
   little-endian CPU).
 - Provides helper methods for getting standard mesh properties (position and 
   other vertex attributes; indices for faces).
 - Can optionally triangulate polygons with more than 3 vertices.
+- Optional fast path for models where you know every face has the same fixed 
+  number of vertices
 - MIT licensed.
 
 Note that miniply does not support *writing* PLY files, only reading them.
@@ -106,16 +110,15 @@ Loading a triangle mesh
 Polygons in PLY files are ordinarily stored in a list property, meaning that each 
 polygon is a variable-length list of vertex indices. If the mesh representation in
 your program is triangles-only, you will need to triangulate the faces. `miniply` 
-has built-in support for this and this example code, taken from 
-[extra/miniply-perf](https://github.com/vilya/miniply/blob/master/extra/miniply-perf.cpp)
-with only minor simplifications, shows how to use it:
+has built-in support for this:
+
+*Note that if you know in advance that your PLY file only contains triangles, you can load it much more efficiently. See below for details.*
 
 ```cpp
 // Very basic triangle mesh struct, for example purposes
 struct TriMesh {
   // Per-vertex data
   float* pos     = nullptr; // has 3 * numVerts elements.
-  float* normal  = nullptr; // if non-null, has 3 * numVerts elements.
   float* uv      = nullptr; // if non-null, has 2 * numVerts elements.
   uint32_t numVerts   = 0;
 
@@ -132,25 +135,18 @@ TriMesh* load_trimesh_from_ply(const char* filename)
     return nullptr;
   }
 
+  uint32_t propIdxs[3];
+  bool gotVerts = false, gotFaces = false;
+
   TriMesh* trimesh = new TriMesh();
-  bool gotVerts = false;
-  bool gotFaces = false;
   while (reader.has_element() && (!gotVerts || !gotFaces)) {
-    if (!gotVerts && reader.element_is(miniply::kPLYVertexElement)) {
-      if (!reader.load_element()) {
-        break;
-      }
-      uint32_t propIdxs[3];
-      if (!reader.find_pos(propIdxs)) {
+    if (reader.element_is(miniply::kPLYVertexElement)) {
+      if (!reader.load_element() || !reader.find_pos(propIdxs)) {
         break;
       }
       trimesh->numVerts = reader.num_rows();
       trimesh->pos = new float[trimesh->numVerts * 3];
       reader.extract_properties(propIdxs, 3, miniply::PLYPropertyType::Float, trimesh->pos);
-      if (reader.find_normal(propIdxs)) {
-        trimesh->normal = new float[trimesh->numVerts * 3];
-        reader.extract_properties(propIdxs, 3, miniply::PLYPropertyType::Float, trimesh->normal);
-      }
       if (reader.find_texcoord(propIdxs)) {
         trimesh->uv = new float[trimesh->numVerts * 2];
         reader.extract_properties(propIdxs, 2, miniply::PLYPropertyType::Float, trimesh->uv);
@@ -158,16 +154,13 @@ TriMesh* load_trimesh_from_ply(const char* filename)
       gotVerts = true;
     }
     else if (!gotFaces && reader.element_is(miniply::kPLYFaceElement)) {
-      if (!reader.load_element()) {
-        break;
-      }
       uint32_t propIdx;
-      if (!reader.find_indices(&propIdx)) {
+      if (!reader.load_element() || !reader.find_indices(&propIdx)) {
         break;
       }
       bool polys = reader.requires_triangulation(propIdx);
       if (polys && !gotVerts) {
-        fprintf(stderr, "Error: face data needing triangulation found before vertex data.\n");
+        fprintf(stderr, "Error: need vertex positions to triangulate faces.\n");
         break;
       }
       if (polys) {
@@ -185,7 +178,7 @@ TriMesh* load_trimesh_from_ply(const char* filename)
     reader.next_element();
   }
 
-  if (!gotVerts || !gotFaces || !trimesh->all_indices_valid()) {
+  if (!gotVerts || !gotFaces) {
     delete trimesh;
     return nullptr;
   }
@@ -193,6 +186,82 @@ TriMesh* load_trimesh_from_ply(const char* filename)
   return trimesh;
 }
 ```
+
+For a more complete example, see 
+[extra/miniply-perf.cpp](https://github.com/vilya/miniply/blob/master/extra/miniply-perf.cpp)
+
+
+Loading from a PLY file known to only contains triangles
+--------------------------------------------------------
+
+Loading the vertex indices for each face from a variable length list is a bit
+wasteful if you know ahread of time that your PLY file only contains triangles.
+With `miniply` you can take advantage of this knowledge to get a massive
+reduction in the loading time for the file.
+
+The idea is to replace the single list property, which miniply has to treat as
+ variable-sized, with a set of fixed-size properties. There will be one
+property corresponding to the item count for each list (which we will ignore
+during  loading, because we know it will always be three), followed by three
+new  properties (one for each list index). You do this by calling 
+`convert_list_to_fixed_size()` on the face element at some point prior to
+loading its data.
+
+Doing this allows `miniply` to use its far more efficient code path for loading 
+fixed-size elements instead. This can cut loading times by more than half!
+
+```cpp
+// Note: using the same TriMesh class as the example above, omitting it here
+// for the sake of brevity.
+
+TriMesh* load_trimesh_from_triangles_only_ply(const char* filename)
+{
+  miniply::PLYReader reader(filename);
+  if (!reader.valid()) {
+    return nullptr;
+  }
+
+  uint32_t faceIdxs[3];
+  miniply::PLYElement* faceElem = reader.get_element(reader.find_element(miniply::kPLYFaceElement));
+  if (faceElem == nullptr) {
+    return nullptr;
+  }
+  faceElem->convert_list_to_fixed_size(faceElem->find_property("vertex_indices"), 3, faceIdxs);
+
+  uint32_t propIdxs[3];
+  bool gotVerts = false, gotFaces = false;
+
+  TriMesh* trimesh = new TriMesh();
+  while (reader.has_element() && (!gotVerts || !gotFaces)) {
+    if (reader.element_is(miniply::kPLYVertexElement)) {
+      // This section is the same as the example above, not repeating it here.
+    }
+    else if (!gotFaces && reader.element_is(miniply::kPLYFaceElement)) {
+      if (!reader.load_element()) {
+        break;
+      }
+      trimesh->numIndices = reader.num_rows() * 3;
+      trimesh->indices = new int[trimesh->numIndices];
+      reader.extract_properties(faceIdxs, 3, miniply::PLYPropertyType::Int, trimesh->indices);
+      gotFaces = true;
+    }
+    reader.next_element();
+  }
+
+  if (!gotVerts || !gotFaces) {
+    delete trimesh;
+    return nullptr;
+  }
+
+  return trimesh;
+}
+```
+
+To recap, the differences from the previous example are:
+1. We're calling `faceElem->convert_list_to_fixed_size()` up front.
+2. In the section which processes the face element, we're calling 
+   `reader.extract_properties()` to get the index data instead of 
+   `reader.extract_triangles()` or `reader.extrat_list_property()`.
 
 
 History
@@ -217,38 +286,29 @@ libraries.
 Overall `miniply` is between 2 and 8 times faster than all the other parsers I've 
 tested, for that workload (creating a simple poly mesh from each ply file).
 
-*Update:* I've just discovered a PLY library, msh_ply, which is faster than miniply. 
-Quite a bit faster, in fact, especially for larger files like the Lucy model from 
-the Stanford 3D Scan collection. I still have some work to do before I can claim the
-"world's fastest PLY parser" title!
+*Update:* I've just discovered Maciej Halber's
+[ply_io_benchmark](https://github.com/mhalber/ply_io_benchmark) (thanks to
+Dimitri Diakopoulos for the pointer!) which has a number of additional
+PLY parsers that I wasn't aware of, including Maciej's own `msh_ply` which 
+seems to be extremely fast. I'm adding all those extra parsers to my benchmark
+and will update the performance claims above when done.
 
 
 Other PLY parsing libraries
 ---------------------------
 
-There are several other C/C++ libraries available for parsing PLY files. If
-miniply doesn't meet your needs, perhaps one of these will:
+There are quite a few other C/C++ libraries available for parsing PLY files and
+they cover a variety of parsing pardigms between them.
 
 * [Happly](https://github.com/nmwsharp/happly)
 * [tinyply](https://github.com/ddiakopoulos/tinyply)
 * [RPly](http://w3.impa.br/~diego/software/rply/)
 
-Each of these libraries provides a slightly different paradigm for extracting
-data from the PLY files:
-* *Happly* parses the whole file and makes all the data available for random 
-  access by your code. This is probably the easiest to use, but can require a
-  lot of work to translate the data into your own structures.
-* *tinyply* parses the file header so that it knows what data is available,
-  then asks you to specify which elements and properties you want. Loading
-  fills in the data for those and ignores everything else. Your code then has
-  random access to that data only.
-* *RPly* requires you to provide callback functions for each of the elements 
-  you're interested in and it invokes those as it parses. You can provide
-  two context parameters (one void pointer, one long int) for each callback
-  which can help you determine where to store the data.
+If miniply doesn't meet your needs, perhaps one of these will?
 
-All of the above provide the ability to write PLY files as well, which miniply
-does not do.
+Note that most (all?) of the above also support writing PLY files, whereas
+`miniply` only supports reading.
+
 
 
 Feedback, suggestions and bug reports
@@ -256,4 +316,5 @@ Feedback, suggestions and bug reports
 
 GitHub issues: https://github.com/vilya/miniply/issues
 
-If you're using miniply and find it useful, drop me an email - I'd love to know about it!
+If you're using miniply and find it useful, drop me an email - I'd love to
+know about it!
