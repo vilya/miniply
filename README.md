@@ -1,29 +1,30 @@
-miniply - A simple and fast c++11 library for loading PLY files
+miniply
 ===============================================================
 
-miniply is a small, fast and easy-to-use library for parsing [PLY
-files](http://paulbourke.net/dataformats/ply/), written in c++11. The entire
-parser is a single header and cpp file which you can copy into your own
-project.
+<p align="center">
+<img src="https://github.com/vilya/miniply/blob/master/miniPLY3d_logo-cropped.png" width="744"> 
+</p>
+
+A fast and easy-to-use library for parsing 
+[PLY files](http://paulbourke.net/dataformats/ply/), in a single c++11 header and
+cpp file with no external dependencies, ready to drop into your project.
 
 
 Features
 --------
 
-- *Small*: just a single .h and .cpp file which you can copy into your project.
-* *Fast*: loads all 8929 PLY files from the 
+- **Fast**: loads all 8929 PLY files from the 
   [pbrt-v3-scenes repository](https://www.pbrt.org/scenes-v3.html)
   in under 9 seconds total - an average parsing time of less than 1 millisecond
   per file!
-- *Complete*: parses ASCII, binary little-endian and binary big-endian
+- **Small**: just a single .h and .cpp file which you can copy into your project.
+- **Complete**: parses ASCII, binary little-endian and binary big-endian
   versions of the file format (binary loading assumes you're running on a 
   little-endian CPU).
-- Provides helper methods for getting standard mesh properties (position and 
-  other vertex attributes; indices for faces).
-- Can optionally triangulate polygons with more than 3 vertices.
-- Optional fast path for models where you know every face has the same fixed 
-  number of vertices
-- MIT licensed.
+- Provides helper methods for getting **standard vertex and face properties**.
+- Can **triangulate polygons** are they're loaded.
+- **Fast path** for models where you know every face has the same fixed number of vertices
+- **MIT license**
 
 Note that miniply does not support *writing* PLY files, only reading them.
 
@@ -112,7 +113,7 @@ polygon is a variable-length list of vertex indices. If the mesh representation 
 your program is triangles-only, you will need to triangulate the faces. `miniply` 
 has built-in support for this:
 
-*Note that if you know in advance that your PLY file only contains triangles, you can load it much more efficiently. See below for details.*
+*Note that if you know in advance that your PLY file only contains triangles, there is a much faster way to load it. See below for details.*
 
 ```cpp
 // Very basic triangle mesh struct, for example purposes
@@ -135,45 +136,41 @@ TriMesh* load_trimesh_from_ply(const char* filename)
     return nullptr;
   }
 
-  uint32_t propIdxs[3];
+  uint32_t indexes[3];
   bool gotVerts = false, gotFaces = false;
 
   TriMesh* trimesh = new TriMesh();
   while (reader.has_element() && (!gotVerts || !gotFaces)) {
-    if (reader.element_is(miniply::kPLYVertexElement)) {
-      if (!reader.load_element() || !reader.find_pos(propIdxs)) {
-        break;
-      }
+    if (reader.element_is(miniply::kPLYVertexElement) && reader.load_element() && reader.find_pos(indexes)) {
       trimesh->numVerts = reader.num_rows();
       trimesh->pos = new float[trimesh->numVerts * 3];
-      reader.extract_properties(propIdxs, 3, miniply::PLYPropertyType::Float, trimesh->pos);
-      if (reader.find_texcoord(propIdxs)) {
+      reader.extract_properties(indexes, 3, miniply::PLYPropertyType::Float, trimesh->pos);
+      if (reader.find_texcoord(indexes)) {
         trimesh->uv = new float[trimesh->numVerts * 2];
-        reader.extract_properties(propIdxs, 2, miniply::PLYPropertyType::Float, trimesh->uv);
+        reader.extract_properties(indexes, 2, miniply::PLYPropertyType::Float, trimesh->uv);
       }
       gotVerts = true;
     }
-    else if (!gotFaces && reader.element_is(miniply::kPLYFaceElement)) {
-      uint32_t propIdx;
-      if (!reader.load_element() || !reader.find_indices(&propIdx)) {
-        break;
-      }
+    else if (reader.element_is(miniply::kPLYFaceElement) && reader.load_element() && reader.find_indices(indexes) {
       bool polys = reader.requires_triangulation(propIdx);
       if (polys && !gotVerts) {
         fprintf(stderr, "Error: need vertex positions to triangulate faces.\n");
         break;
       }
       if (polys) {
-        trimesh->numIndices = reader.num_triangles(propIdx) * 3;
+        trimesh->numIndices = reader.num_triangles(indexes[0]) * 3;
         trimesh->indices = new int[trimesh->numIndices];
-        reader.extract_triangles(propIdx, trimesh->pos, trimesh->numVerts, miniply::PLYPropertyType::Int, trimesh->indices);
+        reader.extract_triangles(indexes[0], trimesh->pos, trimesh->numVerts, miniply::PLYPropertyType::Int, trimesh->indices);
       }
       else {
         trimesh->numIndices = reader.num_rows() * 3;
         trimesh->indices = new int[trimesh->numIndices];
-        reader.extract_list_property(propIdx, miniply::PLYPropertyType::Int, trimesh->indices);
+        reader.extract_list_property(indexes[0], miniply::PLYPropertyType::Int, trimesh->indices);
       }
       gotFaces = true;
+    }
+    if (gotVerts && gotFaces) {
+      break;
     }
     reader.next_element();
   }
@@ -228,22 +225,22 @@ TriMesh* load_trimesh_from_triangles_only_ply(const char* filename)
   }
   faceElem->convert_list_to_fixed_size(faceElem->find_property("vertex_indices"), 3, faceIdxs);
 
-  uint32_t propIdxs[3];
+  uint32_t indexes[3];
   bool gotVerts = false, gotFaces = false;
 
   TriMesh* trimesh = new TriMesh();
   while (reader.has_element() && (!gotVerts || !gotFaces)) {
-    if (reader.element_is(miniply::kPLYVertexElement)) {
+    if (reader.element_is(miniply::kPLYVertexElement) && reader.load_element() && reader.find_pos(indexes)) {
       // This section is the same as the example above, not repeating it here.
     }
-    else if (!gotFaces && reader.element_is(miniply::kPLYFaceElement)) {
-      if (!reader.load_element()) {
-        break;
-      }
+    else if (!gotFaces && reader.element_is(miniply::kPLYFaceElement) && reader.load_element()) {
       trimesh->numIndices = reader.num_rows() * 3;
       trimesh->indices = new int[trimesh->numIndices];
       reader.extract_properties(faceIdxs, 3, miniply::PLYPropertyType::Int, trimesh->indices);
       gotFaces = true;
+    }
+    if (gotVerts && gotFaces) {
+      break;
     }
     reader.next_element();
   }
@@ -297,18 +294,16 @@ and will update the performance claims above when done.
 Other PLY parsing libraries
 ---------------------------
 
-There are quite a few other C/C++ libraries available for parsing PLY files and
-they cover a variety of parsing pardigms between them.
+If miniply doesn't meet your needs, perhaps one of these other great PLY parsing 
+libraries will?
 
 * [Happly](https://github.com/nmwsharp/happly)
 * [tinyply](https://github.com/ddiakopoulos/tinyply)
 * [RPly](http://w3.impa.br/~diego/software/rply/)
+* [msh_ply](https://github.com/mhalber/msh/blob/master/msh_ply.h)
 
-If miniply doesn't meet your needs, perhaps one of these will?
-
-Note that most (all?) of the above also support writing PLY files, whereas
+In particular these all support writing as well as reading, whereas
 `miniply` only supports reading.
-
 
 
 Feedback, suggestions and bug reports
