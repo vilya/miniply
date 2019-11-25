@@ -182,17 +182,6 @@ namespace miniply {
   }
 
 
-  static inline int64_t file_pos(FILE* file)
-  {
-  #ifdef _WIN32
-    return _ftelli64(file);
-  #else
-    static_assert(sizeof(off_t) == sizeof(int64_t), "off_t is not 64 bits.");
-    return ftello(file);
-  #endif
-  }
-
-
   static inline int file_seek(FILE* file, int64_t offset, int origin)
   {
   #ifdef _WIN32
