@@ -284,12 +284,9 @@ libraries.
 Overall `miniply` is between 2 and 8 times faster than all the other parsers I've 
 tested, for that workload (creating a simple poly mesh from each ply file).
 
-*Update:* I've just discovered Maciej Halber's
-[ply_io_benchmark](https://github.com/mhalber/ply_io_benchmark) (thanks to
-Dimitri Diakopoulos for the pointer!) which has a number of additional
-PLY parsers that I wasn't aware of, including Maciej's own `msh_ply` which 
-seems to be extremely fast. I'm adding all those extra parsers to my benchmark
-and will update the performance claims above when done.
+See also Maciej Halber's [ply_io_benchmark](https://github.com/mhalber/ply_io_benchmark) 
+(thanks to Dimitri Diakopoulos for the pointer!) for more performance 
+comparisons. `miniply` is not included there yet, but hopefully will be soon.
 
 
 Other PLY parsing libraries
