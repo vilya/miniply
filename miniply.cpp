@@ -1534,6 +1534,17 @@ namespace miniply {
   {
     m_elementData.resize(elem.count * elem.rowStride);
 
+    // Preallocate enough space for each row in the property to contain three
+    // items. This is based on the assumptions that (a) the most common use for
+    // list properties is vertex indices; and (b) most faces are triangles.
+    // This gives a performance boost because we won't have to grow the
+    // listData vector as many times during loading.
+    for (PLYProperty& prop : elem.properties) {
+      if (prop.countType != PLYPropertyType::None) {
+        prop.listData.reserve(elem.count * kPLYPropertySize[uint32_t(prop.type)] * 3);
+      }
+    }
+
     if (m_fileType == PLYFileType::Binary) {
       size_t back = 0;
       for (uint32_t row = 0; row < elem.count; row++) {
