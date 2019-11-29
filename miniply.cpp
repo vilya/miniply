@@ -53,6 +53,7 @@ namespace miniply {
   //
 
   static constexpr uint32_t kPLYReadBufferSize = 128 * 1024;
+  static constexpr uint32_t kPLYTempBufferSize = kPLYReadBufferSize;
 
   static const char* kPLYFileTypes[] = { "ascii", "binary_little_endian", "binary_big_endian", nullptr };
   static const uint32_t kPLYPropertySize[]= { 1, 1, 2, 2, 4, 4, 4, 8 };
@@ -521,11 +522,22 @@ namespace miniply {
     }
 
     PLYProperty oldListProp = properties[listPropIdx];
-    char nameBuf[512];
+
+    // If the generated names are less than 256 chars, we will use an array on
+    // the stack as temporary storage. In the rare case that they're longer,
+    // we'll allocate an array of sufficient size on the heap and use that
+    // instead. This means we'll avoid allocating in all but the most extreme
+    // cases.
+    char inlineBuf[256];
+    size_t nameBufSize = oldListProp.name.size() + 12; // the +12 allows space for an '_', a number up to 10 digits long and the terminating null.
+    char* nameBuf = inlineBuf;
+    if (nameBufSize > sizeof(inlineBuf)) {
+      nameBuf = new char[nameBufSize];
+    }
 
     // Set up a property for the list count column.
     PLYProperty& countProp = properties[listPropIdx];
-    snprintf(nameBuf, sizeof(nameBuf), "%s_count", oldListProp.name.c_str());
+    snprintf(nameBuf, nameBufSize, "%s_count", oldListProp.name.c_str());
     countProp.name = nameBuf;
     countProp.type = oldListProp.countType;
     countProp.countType = PLYPropertyType::None;
@@ -554,6 +566,10 @@ namespace miniply {
       }
     }
 
+    if (nameBuf != inlineBuf) {
+      delete[] nameBuf;
+    }
+
     calculate_offsets();
     return true;
   }
@@ -567,6 +583,9 @@ namespace miniply {
   {
     m_buf = new char[kPLYReadBufferSize + 1];
     m_buf[kPLYReadBufferSize] = '\0';
+
+    m_tmpBuf = new char[kPLYReadBufferSize + 1];
+    m_tmpBuf[kPLYReadBufferSize] = '\0';
 
     m_bufEnd = m_buf + kPLYReadBufferSize;
     m_pos = m_bufEnd;
@@ -609,6 +628,7 @@ namespace miniply {
       fclose(m_f);
     }
     delete[] m_buf;
+    delete[] m_tmpBuf;
   }
 
 
@@ -1400,11 +1420,10 @@ namespace miniply {
 
   bool PLYReader::parse_element()
   {
-    char name[256];
     int count = 0;
 
     m_valid = keyword("element") && advance() &&
-              identifier(name, sizeof(name)) && advance() &&
+              identifier(m_tmpBuf, kPLYTempBufferSize) && advance() &&
               int_literal(&count) && next_line();
     if (!m_valid || count < 0) {
       return false;
@@ -1412,7 +1431,7 @@ namespace miniply {
 
     m_elements.push_back(PLYElement());
     PLYElement& elem = m_elements.back();
-    elem.name = name;
+    elem.name = m_tmpBuf;
     elem.count = static_cast<uint32_t>(count);
     elem.properties.reserve(10);
 
@@ -1426,7 +1445,6 @@ namespace miniply {
 
   bool PLYReader::parse_property(std::vector<PLYProperty>& properties)
   {
-    char name[256];
     PLYPropertyType type      = PLYPropertyType::None;
     PLYPropertyType countType = PLYPropertyType::None;
 
@@ -1444,14 +1462,14 @@ namespace miniply {
     }
 
     m_valid = which_property_type(&type) && advance() &&
-              identifier(name, sizeof(name)) && next_line();
+              identifier(m_tmpBuf, kPLYTempBufferSize) && next_line();
     if (!m_valid) {
       return false;
     }
 
     properties.push_back(PLYProperty());
     PLYProperty& prop = properties.back();
-    prop.name = name;
+    prop.name = m_tmpBuf;
     prop.type = type;
     prop.countType = countType;
 

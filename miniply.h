@@ -268,6 +268,8 @@ namespace miniply {
     size_t m_currentElement = 0;
     bool m_elementLoaded    = false;
     std::vector<uint8_t> m_elementData;
+
+    char* m_tmpBuf = nullptr;
   };
 
 
