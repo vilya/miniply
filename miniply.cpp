@@ -584,8 +584,8 @@ namespace miniply {
     m_buf = new char[kPLYReadBufferSize + 1];
     m_buf[kPLYReadBufferSize] = '\0';
 
-    m_tmpBuf = new char[kPLYReadBufferSize + 1];
-    m_tmpBuf[kPLYReadBufferSize] = '\0';
+    m_tmpBuf = new char[kPLYTempBufferSize + 1];
+    m_tmpBuf[kPLYTempBufferSize] = '\0';
 
     m_bufEnd = m_buf + kPLYReadBufferSize;
     m_pos = m_bufEnd;
