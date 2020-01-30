@@ -58,6 +58,36 @@ bool print_ply_header(const char* filename)
   }
   printf("end_header\n");
 
+  while (reader.has_element()) {
+    const miniply::PLYElement* elem = reader.element();
+    if (elem->fixedSize || elem->count == 0) {
+      reader.next_element();
+      continue;
+    }
+
+    if (!reader.load_element()) {
+      fprintf(stderr, "Element %s failed to load\n", elem->name.c_str());
+    }
+    for (const miniply::PLYProperty& prop : elem->properties) {
+      if (prop.countType == miniply::PLYPropertyType::None) {
+        continue;
+      }
+      bool mixedSize = false;
+      const uint32_t firstRowCount = prop.rowCount.front();
+      for (const uint32_t rowCount : prop.rowCount) {
+        if (rowCount != firstRowCount) {
+          mixedSize = true;
+          break;
+        }
+      }
+      if (mixedSize) {
+        printf("Element '%s', property '%s': not all lists have the same size\n",
+               elem->name.c_str(), prop.name.c_str());
+      }
+    }
+    reader.next_element();
+  }
+
   return true;
 }
 
