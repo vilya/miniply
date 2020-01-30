@@ -23,7 +23,7 @@ Features
   little-endian CPU).
 - **Cross-platform**: works on Windows, macOS and Linux.
 - Provides helper methods for getting **standard vertex and face properties**.
-- Can **triangulate polygons** are they're loaded.
+- Can **triangulate polygons** as they're loaded.
 - **Fast path** for models where you know every face has the same fixed number of vertices
 - **MIT license**
 
