@@ -81,8 +81,12 @@ bool print_ply_header(const char* filename)
         }
       }
       if (mixedSize) {
-        printf("Element '%s', property '%s': not all lists have the same size\n",
+        printf("Element '%s', list property '%s': not all lists have the same size\n",
                elem->name.c_str(), prop.name.c_str());
+      }
+      else {
+        printf("Element '%s', list property '%s': all lists have size %u\n",
+               elem->name.c_str(), prop.name.c_str(), firstRowCount);
       }
     }
     reader.next_element();
