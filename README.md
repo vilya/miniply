@@ -286,7 +286,7 @@ tested, for that workload (creating a simple poly mesh from each ply file).
 
 See also Maciej Halber's [ply_io_benchmark](https://github.com/mhalber/ply_io_benchmark) 
 (thanks to Dimitri Diakopoulos for the pointer!) for more performance 
-comparisons. `miniply` is not included there yet, but hopefully will be soon.
+comparisons.
 
 
 Other PLY parsing libraries
