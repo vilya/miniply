@@ -59,12 +59,27 @@ double Timer::elapsedMS() const
 
 
 //
+// Topology enum
+//
+
+enum class Topology {
+  Soup,   // Every 3 indices specify a triangle.
+  Strip,  // Triangle strip, triangle i uses indices i, i-1 and i-2
+  Fan,    // Triangle fan, triangle i uses indices, i, i-1 and 0.
+};
+
+
+//
 // TriMesh type
 //
 
 // This is what we populate to test & benchmark data extraction from the PLY
 // file. It's a triangle mesh, so any faces with more than three verts will
 // get triangulated.
+//
+// The structure can hold individual triangles, triangle strips or triangle
+// fans (pick one). If it's strips or fans, you can use an optional
+// terminator value to indicate where one strip/fan ends and a new one begins.
 struct TriMesh {
   // Per-vertex data
   float* pos          = nullptr; // has 3*numVerts elements.
@@ -76,6 +91,10 @@ struct TriMesh {
   int* indices        = nullptr; // has numIndices elements.
   uint32_t numIndices = 0; // number of indices = 3 times the number of faces.
 
+  Topology topology  = Topology::Soup; // How to interpret the indices.
+  bool hasTerminator = false;          // Only applies when topology != Soup.
+  int terminator     = -1;             // Value indicating the end of a strip or fan. Only applies when topology != Soup.
+
   ~TriMesh() {
     delete[] pos;
     delete[] normal;
@@ -84,7 +103,11 @@ struct TriMesh {
   }
 
   bool all_indices_valid() const {
+    bool checkTerminator = topology != Topology::Soup && hasTerminator && (terminator < 0 || terminator >= int(numVerts));
     for (uint32_t i = 0; i < numIndices; i++) {
+      if (checkTerminator && indices[i] == terminator) {
+        continue;
+      }
       if (indices[i] < 0 || uint32_t(indices[i]) >= numVerts) {
         return false;
       }
@@ -162,6 +185,26 @@ static TriMesh* parse_file_with_miniply(const char* filename, bool assumeTriangl
           reader.extract_list_property(propIdx, miniply::PLYPropertyType::Int, trimesh->indices);
         }
       }
+      gotFaces = true;
+    }
+    else if (!gotFaces && reader.element_is("tristrips")) {
+      if (!reader.load_element()) {
+        fprintf(stderr, "Error: failed to load tri strips.\n");
+        break;
+      }
+      uint32_t propIdx = reader.element()->find_property("vertex_indices");
+      if (propIdx == miniply::kInvalidIndex) {
+        fprintf(stderr, "Error: couldn't find 'vertex_indices' property for the 'tristrips' element.\n");
+        break;
+      }
+
+      trimesh->numIndices = reader.sum_of_list_counts(propIdx);
+      trimesh->indices = new int[trimesh->numIndices];
+      trimesh->topology = Topology::Strip;
+      trimesh->hasTerminator = true;
+      trimesh->terminator = -1;
+      reader.extract_list_property(propIdx, miniply::PLYPropertyType::Int, trimesh->indices);
+
       gotFaces = true;
     }
     reader.next_element();
