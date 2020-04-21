@@ -198,6 +198,12 @@ namespace miniply {
     /// array is the number of items in the `i`th list.
     const uint32_t* get_list_counts(uint32_t propIdx) const;
 
+    /// Get the sum of all item counts for a list property. This can be useful
+    /// to determine how big a destination array you'll need for a call to
+    /// `extract_list_property`. It's equivalent to summing up all the values
+    /// in the array returned by `get_list_counts`, but faster.
+    uint32_t sum_of_list_counts(uint32_t propIdx) const;
+
     const uint8_t* get_list_data(uint32_t propIdx) const;
     bool extract_list_property(uint32_t propIdx, PLYPropertyType destType, void* dest) const;
 

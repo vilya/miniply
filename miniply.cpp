@@ -1007,6 +1007,16 @@ namespace miniply {
   }
 
 
+  uint32_t PLYReader::sum_of_list_counts(uint32_t propIdx) const
+  {
+    if (!has_element() || propIdx >= element()->properties.size() || element()->properties[propIdx].countType == PLYPropertyType::None) {
+      return 0;
+    }
+    const PLYProperty& prop = element()->properties[propIdx];
+    return prop.listData.size() / kPLYPropertySize[uint32_t(prop.type)];
+  }
+
+
   const uint8_t* PLYReader::get_list_data(uint32_t propIdx) const
   {
     if (!has_element() || propIdx >= element()->properties.size() || element()->properties[propIdx].countType == PLYPropertyType::None) {
