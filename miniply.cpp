@@ -44,8 +44,9 @@ namespace miniply {
   //
 
   // Standard PLY element names
-  const char* kPLYVertexElement = "vertex";
-  const char* kPLYFaceElement = "face";
+  const char* kPLYVertexElement    = "vertex";
+  const char* kPLYFaceElement      = "face";
+  const char* kPLYTristripsElement = "tristrips";
 
 
   //
@@ -451,6 +452,25 @@ namespace miniply {
   {
     return (srcType == destType) ||
         (srcType < PLYPropertyType::Float && (uint32_t(srcType) ^ 0x1) == uint32_t(destType));
+  }
+
+
+  //
+  // PLYProperty methods
+  //
+
+  uint32_t PLYProperty::find_value_in_list_data(const uint8_t* value, uint32_t startOffset, uint32_t endOffset) const
+  {
+    const uint32_t bytesPerVal = kPLYPropertySize[uint32_t(type)];
+    assert(startOffset % bytesPerVal == 0);
+
+    const uint8_t* data = listData.data();
+    for (uint32_t offset = startOffset; offset < endOffset; offset += bytesPerVal) {
+      if (memcmp(data + startOffset, value, bytesPerVal) == 0) {
+        return offset;
+      }
+    }
+    return kInvalidIndex;
   }
 
 
@@ -1175,6 +1195,220 @@ namespace miniply {
       }
     }
 
+    return true;
+  }
+
+
+  uint32_t PLYReader::num_triangles_in_strips(uint32_t propIdx, PLYListRestart restart, PLYPropertyType restartValueType, const void* restartValue) const
+  {
+    const uint32_t* counts = get_list_counts(propIdx);
+    if (counts == nullptr) {
+      return 0;
+    }
+
+    uint32_t numRows = element()->count;
+    uint32_t num = 0;
+
+    // The simple case, where every row contains a single triangle strip with
+    // no restart marker. We only need to look at the row counts to calculate
+    // the triangle count, we don't need to inspect the actual data.
+    if (restart == PLYListRestart::None) {
+      for (uint32_t i = 0; i < numRows; i++) {
+        if (counts[i] >= 3) {
+          num += counts[i] - 2;
+        }
+      }
+      return num;
+    }
+
+    const PLYProperty& prop = element()->properties[propIdx];
+    const uint32_t bytesPerVal = kPLYPropertySize[uint32_t(prop.type)];
+
+    // Convert the restart value to the same type as the list items, so that
+    // we don't have to convert it repeatedly while searching.
+    uint8_t convertedRestartValue[8];
+    copy_and_convert(convertedRestartValue, prop.type, reinterpret_cast<const uint8_t*>(restartValue), restartValueType);
+
+    // If every sublist ends with the restart value (i.e. no sublist can omit
+    // it) then we can treat the list data as if it was from a single large
+    // row, making it a bit more efficient to process.
+    uint32_t tmpCount = 0;
+    if (restart == PLYListRestart::Terminator && numRows > 1) {
+      tmpCount = sum_of_list_counts(propIdx);
+      counts = &tmpCount;
+      numRows = 1;
+    }
+
+    uint32_t rowEnd = 0;
+    for (uint32_t row = 0; row < numRows; row++) {
+      uint32_t listStart = rowEnd;
+      rowEnd += counts[row] * bytesPerVal;
+      do {
+        uint32_t listEnd = prop.find_value_in_list_data(convertedRestartValue, listStart, rowEnd);
+        bool hasTerminator = true;
+        if (listEnd >= rowEnd || listEnd == kInvalidIndex) {
+          listEnd = rowEnd;
+          hasTerminator = false;
+        }
+
+        uint32_t numIndicesInStrip = (listEnd - listStart) / bytesPerVal;
+        if (numIndicesInStrip >= 3) {
+          num += (numIndicesInStrip - 2);
+        }
+
+        listStart = listEnd;
+        if (hasTerminator) {
+          listStart += bytesPerVal;
+        }
+      } while (listStart < rowEnd);
+    }
+    return num;
+  }
+
+
+  bool PLYReader::extract_triangle_strips(uint32_t propIdx, PLYPropertyType destType, void *dest, PLYListRestart restart, PLYPropertyType restartValueType, const void* restartValue) const
+  {
+    const uint32_t* counts = get_list_counts(propIdx);
+    if (counts == nullptr) {
+      return 0;
+    }
+
+    uint32_t numRows = element()->count;
+
+    const PLYProperty& prop = element()->properties[propIdx];
+    if (prop.countType == PLYPropertyType::None) {
+      return false; // Tri strips must be stored in a list-valued property and this isn't one.
+    }
+
+    const size_t srcValBytes  = kPLYPropertySize[uint32_t(prop.type)];
+    const size_t destValBytes = kPLYPropertySize[uint32_t(destType)];
+
+    const uint8_t* src = prop.listData.data();
+
+    // Temporary storage for a single de-stripified triangle in the destination
+    // storage type. Our largest item type is 8 bytes, so we will never need
+    // more than 24 bytes for a triangle.
+    uint8_t tri[24];
+
+    // Pointers to the storage for each of the three verts in `tri`, for convenience below.
+    uint8_t* v[3] = { tri, tri + destValBytes, tri + destValBytes * 2 };
+
+    const uint8_t destTriBytes = destValBytes * 3;
+    uint8_t* out = reinterpret_cast<uint8_t*>(dest);
+
+    // The simple case, where every row contains a single triangle strip with
+    // no restart marker.
+    if (restart == PLYListRestart::None) {
+      for (uint32_t row = 0; row < numRows; row++) {
+        const uint8_t* rowEnd = src + counts[row] * srcValBytes;
+
+        if (counts[row] < 3) {
+          src = rowEnd;
+          continue; // List doesn't contain enough vertex indices to form a triangle.
+        }
+
+        // 0, 1, 2 <-- tri 0
+        // 2, 1, 3 <-- tri 1: move v2 to v0, read new value into v2
+        // 2, 3, 4 <-- tri 2: move v2 to v1, read new value into v2
+        // 4, 3, 5 <-- tri 1: move v2 to v0, read new value into v2
+        // 4, 5, 6 <-- tri 2: move v2 to v1, read new value into v2
+        // ...and so on.
+
+        // Triangle 0
+        copy_and_convert(v[0], destType, src, prop.type);
+        src += srcValBytes;
+        copy_and_convert(v[1], destType, src, prop.type);
+        src += srcValBytes;
+        copy_and_convert(v[2], destType, src, prop.type);
+        src += srcValBytes;
+        std::memcpy(out, tri, destTriBytes);
+        out += destTriBytes;
+
+        // All subsequent triangles.
+        uint32_t to = 0;
+        while (src < rowEnd) {
+          std::memcpy(v[to], v[2], destValBytes);
+          to ^= 1;
+          copy_and_convert(v[2], destType, src, prop.type);
+          src += srcValBytes;
+          std::memcpy(out, tri, destTriBytes);
+          out += destTriBytes;
+        }
+      }
+      return true;
+    }
+
+    // Here we handle the more complicated case where a single row can contain
+    // multiple triangle strips, with a special "restart" value used to
+    // indicate where strips end.
+
+    // Convert the restart value to the same type as the list items, so that
+    // we can compare it to them directly instead of having to convert it each
+    // time.
+    uint8_t convertedRestartValue[8];
+    copy_and_convert(convertedRestartValue, prop.type, reinterpret_cast<const uint8_t*>(restartValue), restartValueType);
+
+    // If every sublist ends with the restart value (i.e. no sublist can omit
+    // it) then we can treat the list data as if it was from a single large
+    // row, making it a bit more efficient to process.
+    uint32_t tmpCount = 0;
+    if (restart == PLYListRestart::Terminator && numRows > 1) {
+      tmpCount = sum_of_list_counts(propIdx);
+      counts = &tmpCount;
+      numRows = 1;
+    }
+
+    for (uint32_t row = 0; row < numRows; row++) {
+      const uint8_t* rowEnd = src + counts[row] * srcValBytes;
+
+      while (src < rowEnd) {
+        // Make sure we have space for at least three indices left in the row.
+        if (uint64_t(rowEnd - src) < uint64_t(srcValBytes * 3)) {
+          src = rowEnd;
+          break;
+        }
+        // Make sure there's no restart marker in the first three indices.
+        if (std::memcmp(convertedRestartValue, src, srcValBytes) == 0) {
+          src += srcValBytes;
+          continue;
+        }
+        if (std::memcmp(convertedRestartValue, src + srcValBytes, srcValBytes) == 0) {
+          src += srcValBytes * 2;
+          continue;
+        }
+        if (std::memcmp(convertedRestartValue, src + srcValBytes * 2, srcValBytes) == 0) {
+          src += srcValBytes * 3;
+          continue;
+        }
+
+        // Get triangle 0
+        copy_and_convert(v[0], destType, src, prop.type);
+        src += srcValBytes;
+        copy_and_convert(v[1], destType, src, prop.type);
+        src += srcValBytes;
+        copy_and_convert(v[2], destType, src, prop.type);
+        src += srcValBytes;
+        std::memcpy(out, tri, destTriBytes);
+        out += destTriBytes;
+
+        // All subsequent triangles.
+        uint32_t to = 0;
+        while (src < rowEnd && std::memcmp(convertedRestartValue, src, srcValBytes) != 0) {
+          std::memcpy(v[to], v[2], destValBytes);
+          to ^= 1;
+          copy_and_convert(v[2], destType, src, prop.type);
+          src += srcValBytes;
+          std::memcpy(out, tri, destTriBytes);
+          out += destTriBytes;
+        }
+
+        // If we broke out of the previous loop before reaching the end of the
+        // row, then src must be pointing at a copy of the restart value.
+        if (src < rowEnd) {
+          src += srcValBytes;
+        }
+      }
+    }
     return true;
   }
 

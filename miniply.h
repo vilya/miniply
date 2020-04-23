@@ -45,8 +45,9 @@ namespace miniply {
   static constexpr uint32_t kInvalidIndex = 0xFFFFFFFFu;
 
   // Standard PLY element names
-  extern const char* kPLYVertexElement; // "vertex"
-  extern const char* kPLYFaceElement;   // "face"
+  extern const char* kPLYVertexElement;    // "vertex"
+  extern const char* kPLYFaceElement;      // "face"
+  extern const char* kPLYTristripsElement; // "tristrips"
 
 
   //
@@ -74,15 +75,24 @@ namespace miniply {
   };
 
 
+  enum class PLYListRestart {
+    None,       //!< One list per row, no value treated as special.
+    Separator,  //!< Multiple lists per row with a special value separating them. The separator may optionally appear after the last list in a row too.
+    Terminator, //!< Multiple strips per row, all (including the last) ending with a special value.
+  };
+
+
   struct PLYProperty {
     std::string name;
     PLYPropertyType type      = PLYPropertyType::None; //!< Type of the data. Must be set to a value other than None.
     PLYPropertyType countType = PLYPropertyType::None; //!< None indicates this is not a list type, otherwise it's the type for the list count.
-    uint32_t offset           = 0;                  //!< Byte offset from the start of the row.
+    uint32_t offset           = 0;                     //!< Byte offset from the start of the row.
     uint32_t stride           = 0;
 
     std::vector<uint8_t> listData;
     std::vector<uint32_t> rowCount; // Entry `i` is the number of items (*not* the number of bytes) in row `i`.
+
+    uint32_t find_value_in_list_data(const uint8_t* value, uint32_t startOffset, uint32_t endOffset) const;
   };
 
 
@@ -210,6 +220,9 @@ namespace miniply {
     uint32_t num_triangles(uint32_t propIdx) const;
     bool requires_triangulation(uint32_t propIdx) const;
     bool extract_triangles(uint32_t propIdx, const float pos[], uint32_t numVerts, PLYPropertyType destType, void* dest) const;
+
+    uint32_t num_triangles_in_strips(uint32_t propIdx, PLYListRestart restart, PLYPropertyType restartValueType, const void* restartValue) const;
+    bool extract_triangle_strips(uint32_t propIdx, PLYPropertyType destType, void* dest, PLYListRestart restart, PLYPropertyType restartValueType, const void* restartValue) const;
 
     bool find_pos(uint32_t propIdxs[3]) const;
     bool find_normal(uint32_t propIdxs[3]) const;

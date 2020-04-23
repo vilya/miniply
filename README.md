@@ -262,6 +262,82 @@ To recap, the differences from the previous example are:
    `reader.extract_triangles()` or `reader.extrat_list_property()`.
 
 
+Loading triangle strip data
+---------------------------
+
+Some PLY files may represent faces as a set of triangle strips, stored in a 
+list-valued property. There are several possible ways the triangle strips can
+be stored:
+1. Exactly one triangle strip per row.
+2. Multiple triangle strips per row, with a restart marker to indicate where
+   a strip ends.
+
+For #2, the restart marker may optionally be omitted for the last triangle
+strip in a row.
+
+How you load these depends on whether you want the triangle strip data as is,
+or you want to convert it into an indexed triangle set (i.e. exactly 3 indices
+per triangle).
+
+If you want the triangle strip data as is, you can load it like this:
+```cpp
+if (reader.element_is("tristrips") && reader.load_element()) {
+  uint32_t propIdx = reader.element()->find_property("vertex_indices");
+  int arraySize = reader.sum_of_list_counts(propIdx);
+  int allTriStrips = new int[arraySize];
+  reader.extract_list_property(propIdx, miniply::PLYPropertyType::Int, allTriStrips);
+
+  // ... do stuff with allTriStrips ...
+}
+```
+
+The values in the `allTriStrips` array will be all of the indices exactly as
+they appear in the ply file, with the indices from row `i+1` starting
+immediately after the indices for row `i`.
+
+Note that if the file contains multiple rows and doesn't use restart markers,
+or sometimes omits them at the end of a row, then the indices in
+`allTriStrips` could be a bit misleading: you could have two separate triangle
+strips from adjacent rows that will look like a single longer strip when 
+scanning through the array. You can use `PLYReader::get_list_counts()` to
+identify where each row starts and ends in the array, in order to handle
+that case correctly yourself.
+
+
+Loading and de-stripifying triangle strips
+------------------------------------------
+
+Miniply now also provides direct support for turning triangle strip data into
+an indexed triangle set with 3 indices per triangle. The code below shows what
+you could add to the "loading a triangle mesh" example above to do this:
+
+```cpp
+// ...
+else if (!gotFaces && reader.element_is("tristrips") && reader.load_element() && reader.find_indices(indexes)) {
+  int restartVal = -1;
+  trimesh->numIndices = reader.num_triangles_in_strips(indexes[0], PLYListRestart::Separator, PLYPropertyType::Int, &restartVal) * 3;
+  trimesh->indices = new int[trimesh->numIndices];
+  reader.extract_triangle_strips(indexes[0], PLYPropertyType::Int, trimesh->indices, PLYListRestart::Separator, PLYPropertyType::Int, &restartVal);
+  gotFaces = true;
+}
+// ...
+```
+
+This will correctly handle all of the different ways that triangle strips can
+be represented, as mentioned in the previous section. It will ignore any
+strips that don't contain enough indices to form a triangle. This is because
+it uses `PLYListRestart::Separator`, which is the slowest but most widely
+correct of the three options. If you're only loading PLY files where you know
+one of the other options is applicable, using that instead should give a 
+performance increase.
+
+Note that the restart value support assumes there is a *single* restart value.
+It cannot correctly handle cases where there is more than one. For example, it
+wouldn't be able to handle a file that used any negative number to indicate a
+list restart. In this case you will need to load the triangle strip indices as
+described in the previous section and implement your own destripifying code.
+
+
 History
 -------
 
