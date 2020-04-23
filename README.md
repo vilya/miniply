@@ -262,24 +262,14 @@ To recap, the differences from the previous example are:
    `reader.extract_triangles()` or `reader.extrat_list_property()`.
 
 
-Loading triangle strip data
----------------------------
+Loading triangle strips
+-----------------------
 
-Some PLY files may represent faces as a set of triangle strips, stored in a 
-list-valued property. There are several possible ways the triangle strips can
-be stored:
-1. Exactly one triangle strip per row.
-2. Multiple triangle strips per row, with a restart marker to indicate where
-   a strip ends.
+Some PLY files represent faces as a set of triangle strips, stored in a
+list-valued property. If you want to load the triangle strip indices as-is,
+you can do that in the same was as you would read any other list-valued
+property:
 
-For #2, the restart marker may optionally be omitted for the last triangle
-strip in a row.
-
-How you load these depends on whether you want the triangle strip data as is,
-or you want to convert it into an indexed triangle set (i.e. exactly 3 indices
-per triangle).
-
-If you want the triangle strip data as is, you can load it like this:
 ```cpp
 if (reader.element_is("tristrips") && reader.load_element()) {
   uint32_t propIdx = reader.element()->find_property("vertex_indices");
@@ -291,25 +281,65 @@ if (reader.element_is("tristrips") && reader.load_element()) {
 }
 ```
 
-The values in the `allTriStrips` array will be all of the indices exactly as
-they appear in the ply file, with the indices from row `i+1` starting
-immediately after the indices for row `i`.
+Here the `allTriStrips` array will contain all of the indices from all of the
+lists in the property, one after the other. If there are any restart markers
+(see below) then these will be included in the array too.
 
-Note that if the file contains multiple rows and doesn't use restart markers,
-or sometimes omits them at the end of a row, then the indices in
-`allTriStrips` could be a bit misleading: you could have two separate triangle
-strips from adjacent rows that will look like a single longer strip when 
-scanning through the array. You can use `PLYReader::get_list_counts()` to
-identify where each row starts and ends in the array, in order to handle
-that case correctly yourself.
+Note that indices from one row will be adjacent to indices from the next row
+in `allTriStrips`. If you want to use the row start & end points to implicitly
+indicate the start and end of a triangle strip, you'll have to do that in your
+own code (`PLYReader::get_list_counts` can help with this).
+
+
+Triangle strip restart markers
+------------------------------
+
+Another possibility, already observed in the wild, is that each row in the PLY
+file can have multiple triangle strips separated by a special marker index
+which we call the restart value (loosely following OpenGL's terminology).
+
+Miniply has built-in functionality for de-stripifying which handles marker
+values. *See the next section for example code.* This functionality treats the
+end of each row as an implicit restart marker, if there isn't one explicitly
+present in the data. It distinguishes between three ways of laying out the 
+triangle strip indices. In order from fastest to load, to slowest, they are:
+
+1. `PLYListRestart::None`: Implicit restart markers only, no explicit restart
+   markers. This means there's exactly one triangle strip per row. This is the
+   most efficient form to load.
+
+2. `PLYListRestart::Terminator`: Explicit restart markers only, no implicit
+   restart markers. This allows multiple triangle strips per row. It means every
+   triangle strip *must* end with a restart marker even if it's the last one in a
+   row.
+
+3. `PLYListRestart::Separator`: Both implicit and explicit restart markers
+   allowed. This allows multiple triangle strips per row. It means the last
+   triangle strip in a row does not  have to end with a restart marker, but all
+   earlier strips in the row do.  This is a superset of the other two layouts, so
+   it supports the widest range of inputs; but it's also the least efficient to
+   load.
+
+Note that miniply's restart value support assumes there is a *single* restart
+value. It cannot correctly handle cases where, for example, any negative
+number is supposed to indicate a restart. For cases like that (which are
+hopefully rare!) you'll need to write your own de-stripifying code.
 
 
 Loading and de-stripifying triangle strips
 ------------------------------------------
 
-Miniply now also provides direct support for turning triangle strip data into
-an indexed triangle set with 3 indices per triangle. The code below shows what
-you could add to the "loading a triangle mesh" example above to do this:
+The `PLYReader` class has two methods for loading a triangle strip and
+converting it to an indexed triangle set:
+
+* `PLYReader::num_triangles_in_strips` which tells you how many triangles
+  you'll end up with so that, e.g., you can allocate enough space for them all.
+
+* `PLYReader::extract_triangle_strips` which de-stripifies the triangle strips
+  into an array that you provide.
+
+The example code here shows what you could add to the "loading a triangle
+mesh" example (above) to handle triangle strips:
 
 ```cpp
 // ...
@@ -323,19 +353,10 @@ else if (!gotFaces && reader.element_is("tristrips") && reader.load_element() &&
 // ...
 ```
 
-This will correctly handle all of the different ways that triangle strips can
-be represented, as mentioned in the previous section. It will ignore any
-strips that don't contain enough indices to form a triangle. This is because
-it uses `PLYListRestart::Separator`, which is the slowest but most widely
-correct of the three options. If you're only loading PLY files where you know
-one of the other options is applicable, using that instead should give a 
-performance increase.
-
-Note that the restart value support assumes there is a *single* restart value.
-It cannot correctly handle cases where there is more than one. For example, it
-wouldn't be able to handle a file that used any negative number to indicate a
-list restart. In this case you will need to load the triangle strip indices as
-described in the previous section and implement your own destripifying code.
+Note that this example uses `PLYListRestart::Separator`, which supports the
+widest range of files at the expense of (some) load-time performance. If you
+are only loading files where you know you can use one of the other list 
+restart types, doing so will improve loading performance.
 
 
 History
