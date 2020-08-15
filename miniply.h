@@ -194,6 +194,21 @@ namespace miniply {
     /// `extract_list_column()` for those instead.
     bool extract_properties(const uint32_t propIdxs[], uint32_t numProps, PLYPropertyType destType, void* dest) const;
 
+    /// The same as `extract_properties`, but does not require rows in the
+    /// destination to be contiguous: `destStride` is the number of bytes
+    /// between the start of one row and the start of the next row in the
+    /// destination memory.
+    ///
+    /// This is useful for when your destination is an array of structs where
+    /// you cannot extract all of the properties with a single
+    /// `extract_properties` call, e.g. when not all of the struct members
+    /// have the same type, or when the data you're extracting is only a
+    /// subset of the columns in each destination row.
+    ///
+    /// This is a tiny bit slower than `extract_properties`. Wherever possible
+    /// you should use `extract_properties` in preference to this method.
+    bool extract_properties_with_stride(const uint32_t propIdxs[], uint32_t numProps, PLYPropertyType destType, void* dest, uint32_t destStride) const;
+
     /// Get the array of item counts for a list property. Entry `i` in this
     /// array is the number of items in the `i`th list.
     const uint32_t* get_list_counts(uint32_t propIdx) const;

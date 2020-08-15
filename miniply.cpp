@@ -998,6 +998,121 @@ namespace miniply {
   }
 
 
+  bool PLYReader::extract_properties_with_stride(const uint32_t propIdxs[], uint32_t numProps, PLYPropertyType destType, void *dest, uint32_t destStride) const
+  {
+    if (numProps == 0) {
+      return false;
+    }
+
+    // The destination stride must be greater than or equal to the combined
+    // size of all properties we're extracting. Zero is treated as a special
+    // value meaning packed with no spacing.
+    const uint32_t minDestStride = numProps * kPLYPropertySize[uint32_t(destType)];
+    if (destStride == 0 || destStride == minDestStride) {
+      return extract_properties(propIdxs, numProps, destType, dest);
+    }
+    else if (destStride < minDestStride) {
+      return false;
+    }
+
+    const PLYElement* elem = element();
+
+    // Make sure all property indexes are valid and that none of the properties
+    // are lists (this function only extracts non-list data).
+    for (uint32_t i = 0; i < numProps; i++) {
+      if (propIdxs[i] >= elem->properties.size()) {
+        return false;
+      }
+    }
+
+    // Find out whether we have contiguous columns. If so, we may be able to
+    // use a more efficient data extraction technique.
+    bool contiguousCols = true;
+    uint32_t expectedOffset = elem->properties[propIdxs[0]].offset;
+    for (uint32_t i = 0; i < numProps; i++) {
+      uint32_t propIdx = propIdxs[i];
+      const PLYProperty& prop = elem->properties[propIdx];
+      if (prop.offset != expectedOffset) {
+        contiguousCols = false;
+        break;
+      }
+      expectedOffset = prop.offset + kPLYPropertySize[uint32_t(prop.type)];
+    }
+
+    // If no data conversion is required, we can memcpy chunks of data
+    // directly over to `dest`. How big those chunks will be depends on whether
+    // the columns and/or rows are contiguous, as determined above.
+    bool conversionRequired = false;
+    for (uint32_t i = 0; i < numProps; i++) {
+      uint32_t propIdx = propIdxs[i];
+      const PLYProperty& prop = elem->properties[propIdx];
+      if (!compatible_types(prop.type, destType)) {
+        conversionRequired = true;
+        break;
+      }
+    }
+
+    uint8_t* to = reinterpret_cast<uint8_t*>(dest);
+    if (!conversionRequired) {
+      // If no data conversion is required, we can just use memcpy to get
+      // values into dest. When the destination requires some padding between
+      // rows, the best we can do is a memcpy per row.
+      if (contiguousCols) {
+        // If the rows aren't contiguous, but the columns we're extracting
+        // within each row are, then we can do a single memcpy per row.
+        const uint8_t* from = m_elementData.data() + elem->properties[propIdxs[0]].offset;
+        const uint8_t* end = m_elementData.data() + m_elementData.size();
+        const size_t numBytes = expectedOffset - elem->properties[propIdxs[0]].offset;
+        while (from < end) {
+          std::memcpy(to, from, numBytes);
+          from += elem->rowStride;
+          to += destStride;
+        }
+      }
+      else {
+        // If the columns aren't contiguous, we must memcpy each one separately.
+        const uint8_t* row = m_elementData.data();
+        const uint8_t* end = m_elementData.data() + m_elementData.size();
+        uint8_t* to = reinterpret_cast<uint8_t*>(dest);
+        const size_t colBytes = kPLYPropertySize[uint32_t(destType)]; // size of an output column in bytes.
+        const size_t colPadding = destStride - minDestStride;
+        while (row < end) {
+          for (uint32_t i = 0; i < numProps; i++) {
+            uint32_t propIdx = propIdxs[i];
+            const PLYProperty& prop = elem->properties[propIdx];
+            std::memcpy(to, row + prop.offset, colBytes);
+            to += colBytes;
+          }
+          row += elem->rowStride;
+          to += colPadding;
+        }
+      }
+    }
+    else {
+      // We will have to do data type conversions on the column values here. We
+      // cannot simply use memcpy in this case, every column has to be
+      // processed separately.
+      const uint8_t* row = m_elementData.data();
+      const uint8_t* end = m_elementData.data() + m_elementData.size();
+      uint8_t* to = reinterpret_cast<uint8_t*>(dest);
+      size_t colBytes = kPLYPropertySize[uint32_t(destType)]; // size of an output column in bytes.
+      size_t colPadding = destStride - minDestStride;
+      while (row < end) {
+        for (uint32_t i = 0; i < numProps; i++) {
+          uint32_t propIdx = propIdxs[i];
+          const PLYProperty& prop = elem->properties[propIdx];
+          copy_and_convert(to, destType, row + prop.offset, prop.type);
+          to += colBytes;
+        }
+        row += elem->rowStride;
+        to += colPadding;
+      }
+    }
+
+    return true;
+  }
+
+
   const uint32_t* PLYReader::get_list_counts(uint32_t propIdx) const
   {
     if (!has_element() || propIdx >= element()->properties.size() || element()->properties[propIdx].countType == PLYPropertyType::None) {
