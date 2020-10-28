@@ -152,7 +152,8 @@ TriMesh* load_trimesh_from_ply(const char* filename)
       }
       gotVerts = true;
     }
-    else if (reader.element_is(miniply::kPLYFaceElement) && reader.load_element() && reader.find_indices(indexes) {
+    else if (reader.element_is(miniply::kPLYFaceElement) && reader.load_element() && reader.find_indices(indexes)) {
+      uint32_t propIdx;
       bool polys = reader.requires_triangulation(propIdx);
       if (polys && !gotVerts) {
         fprintf(stderr, "Error: need vertex positions to triangulate faces.\n");
