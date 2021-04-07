@@ -1317,7 +1317,8 @@ namespace miniply {
 
   bool PLYReader::find_color(uint32_t propIdxs[3]) const
   {
-    return find_properties(propIdxs, 3, "r", "g", "b");
+    return find_properties(propIdxs, 3, "r", "g", "b") ||
+           find_properties(propIdxs, 3, "red", "green", "blue"); 
   }
 
 
