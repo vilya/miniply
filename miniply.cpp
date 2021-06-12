@@ -72,6 +72,7 @@ namespace miniply {
     { "uint",   PLYPropertyType::UInt   },
     { "float",  PLYPropertyType::Float  },
     { "float32",PLYPropertyType::Float  },
+    { "float64",PLYPropertyType::Double  },
     { "double", PLYPropertyType::Double },
 
     { "uint8",  PLYPropertyType::UChar  },
