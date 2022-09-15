@@ -1608,7 +1608,7 @@ namespace miniply {
 
   bool PLYReader::load_fixed_size_element(PLYElement& elem)
   {
-    size_t numBytes = elem.count * elem.rowStride;
+    size_t numBytes = static_cast<size_t>(elem.count) * elem.rowStride;
 
     m_elementData.resize(numBytes);
 
@@ -1679,7 +1679,7 @@ namespace miniply {
 
   bool PLYReader::load_variable_size_element(PLYElement& elem)
   {
-    m_elementData.resize(elem.count * elem.rowStride);
+    m_elementData.resize(static_cast<size_t>(elem.count) * elem.rowStride);
 
     // Preallocate enough space for each row in the property to contain three
     // items. This is based on the assumptions that (a) the most common use for
