@@ -233,6 +233,7 @@ namespace miniply {
     bool find_normal(uint32_t propIdxs[3]) const;
     bool find_texcoord(uint32_t propIdxs[2]) const;
     bool find_color(uint32_t propIdxs[3]) const;
+    bool find_color_rgba(uint32_t propIdxs[4]) const;
     bool find_indices(uint32_t propIdxs[1]) const;
 
   private:

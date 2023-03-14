@@ -1324,6 +1324,13 @@ namespace miniply {
   }
 
 
+  bool PLYReader::find_color_rgba(uint32_t propIdxs[4]) const
+  {
+      return find_properties(propIdxs, 4, "r", "g", "b", "a") ||
+          find_properties(propIdxs, 4, "red", "green", "blue", "alpha");
+  }
+
+
   bool PLYReader::find_indices(uint32_t propIdxs[1]) const
   {
     return find_properties(propIdxs, 1, "vertex_indices") || 
